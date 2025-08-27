@@ -1,0 +1,19 @@
+[video]
+resolution = [1280, 720]
+framerate = 60
+
+[multiplayer]
+server_host = "127.0.0.1"
+server_port = 2000
+server_polling_interval = 10
+
+[world_generation]
+resolution = [100, 100]
+# seed = 53220
+octaves = 15
+persistence = 0.5
+lacunarity = 2
+frequency = 1.0
+
+[server]
+port = 2000
