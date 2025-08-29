@@ -1,6 +1,5 @@
 const rl = @import("raylib");
 const std = @import("std");
-const toml = @import("toml");
 const Camera = @import("rcamera.zig");
 const Light = @import("light.zig");
 const Settings = @import("settings.zig");
@@ -138,7 +137,7 @@ pub fn main() !void {
 
         light_shader.deactivate();
 
-        rl.endMode3D(if (cameraFirstPerson) camera1 else camera3);
+        rl.endMode3D();
 
         rl.drawText(rl.textFormat("Camera x: %.1f, y: %.1f, z: %.1f", .{
             camera3.position.x,
@@ -149,6 +148,7 @@ pub fn main() !void {
             rl.getMouseX(),
             rl.getMouseY(),
         }), 12, 32, 24, .white);
+        rl.drawText(rl.textFormat("FPS: %d", .{rl.getFPS()}), 12, 52, 24, .white);
 
         rl.endDrawing();
     }
