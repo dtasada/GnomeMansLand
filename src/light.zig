@@ -64,7 +64,7 @@ fn update(self: *const Self, shader: rl.Shader) void {
     rl.setShaderValue(shader, self.colorLoc, &color, .vec4);
 }
 
-pub fn update_lights(camera: *rl.Camera, light_shader: rl.Shader, lights: std.ArrayList(Self)) void {
+pub fn updateLights(camera: *rl.Camera, light_shader: rl.Shader, lights: std.ArrayList(Self)) void {
     const cameraPos: [3]f32 = .{ camera.position.x, camera.position.y, camera.position.z };
     rl.setShaderValue(light_shader, light_shader.locs[@intFromEnum(rl.ShaderLocationIndex.vector_view)], &cameraPos, .vec3);
     for (lights.items) |l| l.update(light_shader);

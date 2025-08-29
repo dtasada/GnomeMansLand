@@ -1,7 +1,7 @@
 .{
-    .name = .city,
+    .name = .gnome_mans_land,
     .version = "0.0.0",
-    .fingerprint = 0x2d5b0234ebe68efb,
+    .fingerprint = 0x6b1dca5a45abafa0,
     .minimum_zig_version = "0.15.1",
 
     .dependencies = .{

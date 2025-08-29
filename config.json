@@ -5,7 +5,7 @@
 	},
 	"multiplayer": {
 		"server_host": "127.0.0.1",
-		"server_port": 2000,
+		"server_port": 42069,
 		"server_polling_interval": 10
 	},
 	"world_generation": {
