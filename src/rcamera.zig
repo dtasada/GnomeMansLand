@@ -1,11 +1,13 @@
+const std = @import("std");
 const rl = @import("raylib");
+
+pub const MIN_FOV = 1;
+pub const MAX_FOV = 200;
 
 const CAMERA_MOVE_SPEED = 5.4; // Units per second
 const CAMERA_ROTATION_SPEED = 0.03;
 const CAMERA_PAN_SPEED = 0.2;
 const CAMERA_MOUSE_MOVE_SENSITIVITY = 0.003; // Camera mouse movement sensitivity
-const MIN_FOV = 1;
-const MAX_FOV = 200;
 
 // Camera orbital speed in CAMERA_ORBITAL mode
 const CAMERA_ORBITAL_SPEED = 0.5; // Radians per second
@@ -236,7 +238,6 @@ pub fn update(camera: *rl.Camera, mode: rl.CameraMode) void {
 
     if ((mode == .third_person) or (mode == .orbital) or (mode == .free)) {
         // Zoom target distance
-        camera.fovy = @max(@min(MAX_FOV, camera.fovy + rl.getMouseWheelMove()), MIN_FOV);
         if (rl.isKeyPressed(.kp_subtract)) moveToTarget(camera, 2.0);
         if (rl.isKeyPressed(.kp_add)) moveToTarget(camera, -2.0);
     }

@@ -29,8 +29,16 @@ pub fn init(alloc: std.mem.Allocator, st: *const Settings, lgd: LocalGameData) !
         std.posix.IPPROTO.UDP,
     );
 
-    const flags = try std.posix.fcntl(self.sockfd, std.posix.F.GETFL, 0);
-    _ = try std.posix.fcntl(self.sockfd, std.posix.F.SETFL, flags | std.posix.SOCK.NONBLOCK);
+    // const flags = try std.posix.fcntl(self.sockfd, std.posix.F.GETFL, 0);
+
+    var nonblocking: c_ulong = 1;
+    // const result = std.os.windows.ws2_32.ioctlsocket(@intCast(self.sockfd), std.os.windows.ws2_32.FIONBIO, &nonblocking);
+    const result = std.os.windows.ws2_32.ioctlsocket(self.sockfd, std.os.windows.ws2_32.FIONBIO, &nonblocking);
+
+    if (result != 0) {
+        return error.SetNonBlockingFailed;
+    }
+    // _ = try std.posix.fcntl(self.sockfd, std.posix.F.SETFL, std.posix.SOCK.NONBLOCK);
 
     self.open = true;
     self.queue = try std.ArrayList([]const u8).initCapacity(self.alloc, 64);

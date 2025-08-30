@@ -8,6 +8,7 @@ const WorldGen = @import("WorldGen.zig");
 const Server = @import("Server.zig");
 const Client = @import("Client.zig");
 const LocalGameData = @import("LocalGameData.zig");
+const commons = @import("commons.zig");
 
 const Self = @This();
 
@@ -16,8 +17,7 @@ _settings_parsed: std.json.Parsed(Settings),
 alloc: std.mem.Allocator,
 settings: *const Settings,
 world_gen: WorldGen,
-camera_fp: rl.Camera3D,
-camera_tp: rl.Camera3D,
+camera: rl.Camera3D,
 camera_mode: enum { first_person, isometric },
 light_shader: rl.Shader,
 lights: std.ArrayList(Light) = .empty,
@@ -59,7 +59,14 @@ fn setupLights(self: *Self) !void {
     rl.setShaderValue(self.light_shader, ambient_loc, &ambient, .vec4);
 
     self.lights = try std.ArrayList(Light).initCapacity(self.alloc, 32);
-    try self.lights.append(self.alloc, Light.init(.point, rl.Vector3.init(200, 200, 200), rl.Vector3.zero(), .white, 1, self.light_shader));
+    try self.lights.append(self.alloc, Light.init(
+        .point,
+        rl.Vector3.init(200, 200, 200),
+        rl.Vector3.zero(),
+        .white,
+        1,
+        self.light_shader,
+    ));
     // try lights.append(alloc, Light.init(.point, rl.Vector3.init(-2, 20, -2), rl.Vector3.zero(), .yellow, 0.5, light_shader));
     // try lights.append(alloc, Light.init(.point, rl.Vector3.init(2, 20, 2), rl.Vector3.zero(), .red, 0.5, light_shader));
     // try lights.append(alloc, Light.init(.point, rl.Vector3.init(-2, 20, 2), rl.Vector3.zero(), .green, 0.5, light_shader));
@@ -84,19 +91,11 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
 
     self.world_gen = try WorldGen.init(self.alloc, self.settings);
 
-    self.camera_tp = .{
+    self.camera = .{
         .fovy = 100,
         .position = rl.Vector3.one().scale(@floatFromInt(self.world_gen.size.x)),
         .projection = .orthographic,
         .target = rl.Vector3.zero(),
-        .up = rl.Vector3.init(0, 1, 0),
-    };
-
-    self.camera_fp = .{
-        .fovy = 90,
-        .position = rl.Vector3.zero(),
-        .projection = .perspective,
-        .target = rl.Vector3.init(1, 0, 0),
         .up = rl.Vector3.init(0, 1, 0),
     };
 
@@ -133,16 +132,23 @@ pub fn deinit(self: *Self) void {
 }
 
 fn handleKeys(self: *Self) !void {
+    // click to move the camera around
+    // if (rl.isMouseButtonPressed(.left)) {
+    //     std.debug.print("asd", .{});
+    // }
+
+    const m = 5;
+    self.camera.fovy = @max(@min(Camera.MAX_FOV, self.camera.fovy + -m * rl.getMouseWheelMove()), Camera.MIN_FOV);
+
+    // pan the camera
     if (rl.isMouseButtonDown(.right)) {
-        if (self.mouse_is_enabled) toggleMouse(&self.mouse_is_enabled);
+        // if (self.mouse_is_enabled) toggleMouse(&self.mouse_is_enabled);
 
         centerMouse();
-        switch (self.camera_mode) {
-            .first_person => Camera.update(&self.camera_fp, .first_person),
-            .isometric => Camera.update(&self.camera_tp, .third_person),
-        }
+        Camera.update(&self.camera, .third_person);
     } else if (!self.mouse_is_enabled) toggleMouse(&self.mouse_is_enabled);
 
+    // debug light intensity
     if (rl.isKeyPressed(.minus)) {
         for (self.lights.items) |*l|
             l.intensity -= 0.1;
@@ -153,21 +159,23 @@ fn handleKeys(self: *Self) !void {
             l.intensity += 0.1;
     }
 
-    if (rl.isKeyPressed(.k))
-        switch (self.camera_mode) {
-            .first_person => self.camera_mode = .isometric,
-            .isometric => self.camera_mode = .first_person,
-        };
+    // regenerate terrain
+    if (rl.isKeyPressed(.r)) {
+        std.debug.print("RESET", .{});
+        self.world_gen.deinit(self.alloc);
+        self.world_gen = try .init(self.alloc, self.settings);
+    }
 
+    // client-server ping
     if (rl.isKeyPressed(.space))
         try self.client.?.sendMessage("ping!");
 }
 
 fn drawUi(self: *Self) void {
     rl.drawText(rl.textFormat("Camera x: %.1f, y: %.1f, z: %.1f", .{
-        self.camera_tp.position.x,
-        self.camera_tp.position.y,
-        self.camera_tp.position.z,
+        self.camera.position.x,
+        self.camera.position.y,
+        self.camera.position.z,
     }), 12, 12, 24, .white);
 
     rl.drawText(rl.textFormat("Mouse x: %d, y: %d", .{
@@ -176,6 +184,21 @@ fn drawUi(self: *Self) void {
     }), 12, 32, 24, .white);
 
     rl.drawText(rl.textFormat("FPS: %d", .{rl.getFPS()}), 12, 52, 24, .white);
+
+    const layers = [_][]const u8{
+        "water",
+        "sand",
+        "grass",
+        "mountain",
+        "snow",
+    };
+    inline for (0..5) |i| {
+        const rect = rl.Rectangle.init(60, 100 + @as(f32, @floatFromInt(i)) * 30, 200, 20);
+        // const up = commons.upper(self.alloc, layers[i]) catch "";
+        // defer self.alloc.free(up);
+        const up = layers[i];
+        _ = rg.slider(rect, up ++ "0.0", "1.0", &@field(WorldGen.TileData, layers[i]), 0, 1);
+    }
 }
 
 var nickname_storage: [32]u8 = .{0} ** 32; // zero-initialized
@@ -248,19 +271,13 @@ pub fn loop(self: *Self) !void {
                 // update step
                 try self.handleKeys();
 
-                Light.updateLights(&switch (self.camera_mode) {
-                    .first_person => self.camera_fp,
-                    .isometric => self.camera_tp,
-                }, self.light_shader, self.lights);
+                Light.updateLights(&self.camera, self.light_shader, self.lights);
 
                 // render step
                 rl.beginDrawing();
                 rl.clearBackground(.black);
 
-                rl.beginMode3D(switch (self.camera_mode) {
-                    .first_person => self.camera_fp,
-                    .isometric => self.camera_tp,
-                });
+                self.camera.begin();
 
                 // draw lights and models
                 self.light_shader.activate();
@@ -273,7 +290,7 @@ pub fn loop(self: *Self) !void {
 
                 self.light_shader.deactivate();
 
-                rl.endMode3D();
+                self.camera.end();
 
                 self.drawUi();
 

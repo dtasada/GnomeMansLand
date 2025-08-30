@@ -52,12 +52,12 @@ const Color = struct {
     const MOUNTAIN_HIGH = Rgb.init(120, 120, 120);
 };
 
-const TileData = struct {
-    const water: f32 = 0.40;
-    const sand: f32 = 0.43;
-    const grass: f32 = 0.61;
-    const mountain: f32 = 0.68;
-    const snow: f32 = 1.0;
+pub const TileData = struct {
+    pub var water: f32 = 0.40;
+    pub var sand: f32 = 0.43;
+    pub var grass: f32 = 0.61;
+    pub var mountain: f32 = 0.68;
+    pub var snow: f32 = 1.0;
 };
 
 fn lerp_color(c1: Rgb, c2: Rgb, m: f32) Rgb {
@@ -74,13 +74,17 @@ pub fn init(alloc: std.mem.Allocator, st: *const Settings) !Self {
         self.map_data[y] = try alloc.alloc(f32, self.size.x);
 
     try self.genWorld(alloc, st);
-    try self.genModel(st);
 
     std.debug.print("World generated\n", .{});
     return self;
 }
 
 fn genWorld(self: *Self, alloc: std.mem.Allocator, st: *const Settings) !void {
+    try self.genTerrainData(alloc, st);
+    try self.genModel(st);
+}
+
+fn genTerrainData(self: *Self, alloc: std.mem.Allocator, st: *const Settings) !void {
     const seed: u32 = st.world_generation.seed orelse rand: {
         var seed: u32 = undefined;
         try std.posix.getrandom(std.mem.asBytes(&seed));
