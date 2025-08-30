@@ -19,7 +19,11 @@ pub fn init(alloc: std.mem.Allocator, st: *const Settings) !*Self {
 
     // Create UDP socket
     self.serverAddress = try std.net.Address.parseIp(st.multiplayer.server_host, st.multiplayer.server_port);
-    self.sockfd = try std.posix.socket(self.serverAddress.any.family, std.posix.SOCK.DGRAM, 0);
+    self.sockfd = try std.posix.socket(
+        self.serverAddress.any.family,
+        std.posix.SOCK.DGRAM | std.posix.SOCK.NONBLOCK,
+        std.posix.IPPROTO.UDP,
+    );
 
     const flags = try std.posix.fcntl(self.sockfd, std.posix.F.GETFL, 0);
     _ = try std.posix.fcntl(self.sockfd, std.posix.F.SETFL, flags | std.posix.SOCK.NONBLOCK);
@@ -93,7 +97,6 @@ pub fn listen(self: *Self) !void {
     while (self.open) {
         const result = self.receiveMessage() catch |err| {
             if (err == error.NoDataAvailable) {
-                std.debug.print("no data avaiable...\n", .{});
                 std.Thread.sleep(10 * 1e3);
                 continue;
             }

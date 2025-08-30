@@ -14,7 +14,11 @@ pub fn init(alloc: std.mem.Allocator, st: *const Settings) !*Self {
     // Create UDP socket
     var self: *Self = try alloc.create(Self);
     self.server_address = try std.net.Address.parseIp(st.multiplayer.server_host, st.multiplayer.server_port);
-    self.sockfd = try std.posix.socket(self.server_address.any.family, std.posix.SOCK.DGRAM, 0);
+    self.sockfd = try std.posix.socket(
+        self.server_address.any.family,
+        std.posix.SOCK.DGRAM | std.posix.SOCK.NONBLOCK,
+        std.posix.IPPROTO.UDP,
+    );
 
     self._gpa = std.heap.GeneralPurposeAllocator(.{}).init;
     self.alloc = self._gpa.allocator();
@@ -45,7 +49,48 @@ pub fn deinit(self: *Self) void {
 
     _ = self._gpa.deinit();
 
-    std.debug.print("Deinitialized server.", .{});
+    std.debug.print("Deinitialized server\n", .{});
+}
+
+fn receiveMessage(
+    self: *Self,
+    buffer: []u8,
+    client_address: *std.net.Address,
+    client_address_len: *std.posix.socklen_t,
+) ![]const u8 {
+    const bytes_received = std.posix.recvfrom(
+        self.sockfd,
+        buffer[0..],
+        0,
+        @ptrCast(&client_address.any),
+        client_address_len,
+    ) catch |err| switch (err) {
+        error.WouldBlock => return error.NoDataAvailable,
+        error.SocketNotConnected => return error.SocketClosed,
+        else => return err,
+    };
+
+    if (bytes_received == 0) return error.NoBytesReceived;
+
+    return buffer[0..bytes_received];
+}
+
+fn sendMessage(
+    self: *Self,
+    message: []const u8,
+    client_address: *std.net.Address,
+    client_address_len: std.posix.socklen_t,
+) !void {
+    const response = try std.fmt.allocPrint(self.alloc, "Echo: {s}", .{message});
+    defer self.alloc.free(response);
+
+    _ = try std.posix.sendto(
+        self.sockfd,
+        response,
+        0,
+        @ptrCast(&client_address.any),
+        client_address_len,
+    );
 }
 
 pub fn listen(self: *Self) !void {
@@ -57,37 +102,21 @@ pub fn listen(self: *Self) !void {
         var client_address: std.net.Address = undefined;
         var client_address_len: std.posix.socklen_t = @sizeOf(std.net.Address);
 
-        const bytes_received = std.posix.recvfrom(
-            self.sockfd,
-            buffer[0..],
-            0,
-            @ptrCast(&client_address.any),
-            &client_address_len,
-        ) catch |err| {
-            std.debug.print("Failed to receive data: {}\n", .{err});
-            continue;
+        const message = self.receiveMessage(&buffer, &client_address, &client_address_len) catch |err| {
+            if (err == error.NoDataAvailable) {
+                std.Thread.sleep(10 * 1e3);
+                continue;
+            }
+            return err;
         };
 
-        if (bytes_received == 0) continue;
-
-        const message = buffer[0..bytes_received];
         std.debug.print("Received from {f}: {s}\n", .{ client_address, message });
 
         // Echo the message back
-        const response = try std.fmt.allocPrint(self.alloc, "Echo: {s}", .{message});
-        defer self.alloc.free(response);
-
-        _ = std.posix.sendto(
-            self.sockfd,
-            response,
-            0,
-            @ptrCast(&client_address.any),
-            client_address_len,
-        ) catch |err| {
+        self.sendMessage(message, &client_address, client_address_len) catch |err| {
             std.debug.print("Failed to send response: {}\n", .{err});
             continue;
         };
-
         std.debug.print("Sent response to client\n", .{});
     }
 }
