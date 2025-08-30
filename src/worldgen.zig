@@ -4,14 +4,13 @@ const c = @cImport({
     @cInclude("stdlib.h");
 });
 
-const Settings = @import("settings.zig");
-const Perlin = @import("perlin.zig");
+const Settings = @import("Settings.zig");
+const Perlin = @import("Perlin.zig");
 
 const Self = @This();
 
 size: struct { x: u32, y: u32 },
-renderScale: f32,
-mapData: [][]f32,
+map_data: [][]f32,
 model: rl.Model,
 
 const Rgb = struct {
@@ -32,11 +31,12 @@ const Rgb = struct {
     }
 
     pub fn scale(lhs: Rgb, m: f32) Rgb {
-        if (m < 0.0) std.debug.panic("Rgb.scale multiplier < 0.0: mult={}\n", .{m});
+        // if (m < 0.0) std.debug.panic("Rgb.scale multiplier < 0.0: mult={}\n", .{m});
+        const m_ = if (m >= 0) m else 0;
         return Rgb.init(
-            @intFromFloat(@as(f32, @floatFromInt(lhs.r)) * m),
-            @intFromFloat(@as(f32, @floatFromInt(lhs.g)) * m),
-            @intFromFloat(@as(f32, @floatFromInt(lhs.b)) * m),
+            @intFromFloat(@as(f32, @floatFromInt(lhs.r)) * m_),
+            @intFromFloat(@as(f32, @floatFromInt(lhs.g)) * m_),
+            @intFromFloat(@as(f32, @floatFromInt(lhs.b)) * m_),
         );
     }
 };
@@ -67,12 +67,11 @@ fn lerp_color(c1: Rgb, c2: Rgb, m: f32) Rgb {
 pub fn init(alloc: std.mem.Allocator, st: *const Settings) !Self {
     var self: Self = undefined;
     self.size = .{ .x = st.world_generation.resolution[0], .y = st.world_generation.resolution[1] };
-    self.mapData = try alloc.alloc([]f32, self.size.y);
-    self.renderScale = 1.0;
+    self.map_data = try alloc.alloc([]f32, self.size.y);
     self.model = undefined;
 
-    for (0..self.mapData.len) |y|
-        self.mapData[y] = try alloc.alloc(f32, self.size.x);
+    for (0..self.map_data.len) |y|
+        self.map_data[y] = try alloc.alloc(f32, self.size.x);
 
     try self.genWorld(alloc, st);
     try self.genModel(st);
@@ -112,7 +111,7 @@ fn genWorld(self: *Self, alloc: std.mem.Allocator, st: *const Settings) !void {
                 freq *= st.world_generation.lacunarity;
             }
 
-            self.mapData[y][x] = height;
+            self.map_data[y][x] = height;
         }
     }
 }
@@ -232,15 +231,15 @@ fn genTerrainMesh(self: *Self) !rl.Mesh {
 // }
 
 pub fn getHeight(self: *const Self, x: usize, y: usize) f32 {
-    return self.mapData[y][x];
+    return self.map_data[y][x];
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     // Free nested ArrayLists
-    for (0..self.mapData.len) |y|
-        alloc.free(self.mapData[y]);
+    for (0..self.map_data.len) |y|
+        alloc.free(self.map_data[y]);
 
-    alloc.free(self.mapData);
+    alloc.free(self.map_data);
 
     // Free GPU resources
     rl.unloadModel(self.model);

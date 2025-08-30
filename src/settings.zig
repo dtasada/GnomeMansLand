@@ -7,7 +7,7 @@ video: struct {
 multiplayer: struct {
     server_host: []u8,
     server_port: u16,
-    server_polling_interval: i32,
+    server_polling_interval: u64, // in milliseconds
 },
 world_generation: struct {
     resolution: [2]u32,

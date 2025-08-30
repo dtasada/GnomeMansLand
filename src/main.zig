@@ -1,14 +1,9 @@
 const rl = @import("raylib");
 const std = @import("std");
 const rg = @import("raygui");
-const Camera = @import("rcamera.zig");
-const Light = @import("light.zig");
-const Settings = @import("settings.zig");
-const WorldGen = @import("worldgen.zig");
-const Server = @import("server.zig");
-const Client = @import("client.zig");
-const Game = @import("game.zig");
+const Game = @import("Game.zig");
 
+/// Set up Raylib window and corresponding settings
 fn setupRaylib() void {
     const screenWidth = 1280;
     const screenHeight = 720;
@@ -23,22 +18,24 @@ fn setupRaylib() void {
     rl.initWindow(screenWidth, screenHeight, "Gnome Man's Land");
     rl.setExitKey(.null);
     rl.setTargetFPS(60);
-    rl.disableCursor();
-    rl.hideCursor();
 }
 
 pub fn main() !void {
     setupRaylib();
     defer rl.closeWindow();
 
+    // Create allocator for game object
     var gpa = std.heap.GeneralPurposeAllocator(.{}).init;
     defer _ = gpa.deinit();
 
     const alloc = gpa.allocator();
 
+    // Create game object
     var game = try Game.init(alloc);
+
     defer alloc.destroy(game);
     defer game.deinit();
 
+    // Main game loop here
     try game.loop();
 }

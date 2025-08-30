@@ -1,5 +1,6 @@
 const std = @import("std");
-const Settings = @import("settings.zig");
+const Settings = @import("Settings.zig");
+const LocalGameData = @import("LocalGameData.zig");
 
 const Self = @This();
 
@@ -10,12 +11,15 @@ queue: std.ArrayList([]const u8),
 listen_thread: std.Thread,
 alloc: std.mem.Allocator,
 _gpa: std.heap.GeneralPurposeAllocator(.{}),
+polling_interval: u64,
+game_data: LocalGameData,
 
-pub fn init(alloc: std.mem.Allocator, st: *const Settings) !*Self {
+pub fn init(alloc: std.mem.Allocator, st: *const Settings, lgd: LocalGameData) !*Self {
     var self: *Self = try alloc.create(Self);
 
     self._gpa = std.heap.GeneralPurposeAllocator(.{}).init;
     self.alloc = self._gpa.allocator();
+    self.polling_interval = st.multiplayer.server_polling_interval;
 
     // Create UDP socket
     self.serverAddress = try std.net.Address.parseIp(st.multiplayer.server_host, st.multiplayer.server_port);
@@ -30,8 +34,17 @@ pub fn init(alloc: std.mem.Allocator, st: *const Settings) !*Self {
 
     self.open = true;
     self.queue = try std.ArrayList([]const u8).initCapacity(self.alloc, 64);
+    self.game_data = lgd;
 
     std.debug.print("UDP Client connecting to {f}\n", .{self.serverAddress});
+
+    const message = try std.fmt.allocPrint(
+        self.alloc,
+        "{{\"connect\": {{\"nickname\":\"{s}\"}}}}",
+        .{self.game_data.player.nickname},
+    );
+    defer self.alloc.free(message);
+    try self.sendMessage(message);
 
     self.listen_thread = try std.Thread.spawn(.{}, Self.listen, .{self});
 
@@ -39,7 +52,6 @@ pub fn init(alloc: std.mem.Allocator, st: *const Settings) !*Self {
 }
 
 pub fn deinit(self: *Self) void {
-    std.debug.print("Deinitializing client...\n", .{});
     self.open = false;
     self.listen_thread.join();
 
@@ -97,7 +109,7 @@ pub fn listen(self: *Self) !void {
     while (self.open) {
         const result = self.receiveMessage() catch |err| {
             if (err == error.NoDataAvailable) {
-                std.Thread.sleep(10 * 1e3);
+                std.Thread.sleep(self.polling_interval * 1000);
                 continue;
             }
             return err;

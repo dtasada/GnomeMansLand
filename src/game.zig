@@ -2,18 +2,19 @@ const rl = @import("raylib");
 const std = @import("std");
 const rg = @import("raygui");
 const Camera = @import("rcamera.zig");
-const Light = @import("light.zig");
-const Settings = @import("settings.zig");
-const WorldGen = @import("worldgen.zig");
-const Server = @import("server.zig");
-const Client = @import("client.zig");
+const Light = @import("Light.zig");
+const Settings = @import("Settings.zig");
+const WorldGen = @import("WorldGen.zig");
+const Server = @import("Server.zig");
+const Client = @import("Client.zig");
+const LocalGameData = @import("LocalGameData.zig");
 
 const Self = @This();
 
 _gpa: std.heap.GeneralPurposeAllocator(.{}),
 _settings_parsed: std.json.Parsed(Settings),
 alloc: std.mem.Allocator,
-settings: *Settings,
+settings: *const Settings,
 world_gen: WorldGen,
 camera_fp: rl.Camera3D,
 camera_tp: rl.Camera3D,
@@ -104,7 +105,7 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
     try self.setupLights();
     self.world_gen.model.materials[0].shader = self.light_shader;
 
-    self.mouse_is_enabled = false;
+    self.mouse_is_enabled = true;
     self.state = .lobby;
 
     self.client = null;
@@ -131,56 +132,121 @@ pub fn deinit(self: *Self) void {
     _ = self._gpa.deinit();
 }
 
+fn handleKeys(self: *Self) !void {
+    if (rl.isMouseButtonDown(.right)) {
+        if (self.mouse_is_enabled) toggleMouse(&self.mouse_is_enabled);
+
+        centerMouse();
+        switch (self.camera_mode) {
+            .first_person => Camera.update(&self.camera_fp, .first_person),
+            .isometric => Camera.update(&self.camera_tp, .third_person),
+        }
+    } else if (!self.mouse_is_enabled) toggleMouse(&self.mouse_is_enabled);
+
+    if (rl.isKeyPressed(.minus)) {
+        for (self.lights.items) |*l|
+            l.intensity -= 0.1;
+    }
+
+    if (rl.isKeyPressed(.equal)) {
+        for (self.lights.items) |*l|
+            l.intensity += 0.1;
+    }
+
+    if (rl.isKeyPressed(.k))
+        switch (self.camera_mode) {
+            .first_person => self.camera_mode = .isometric,
+            .isometric => self.camera_mode = .first_person,
+        };
+
+    if (rl.isKeyPressed(.space))
+        try self.client.?.sendMessage("ping!");
+}
+
+fn drawUi(self: *Self) void {
+    rl.drawText(rl.textFormat("Camera x: %.1f, y: %.1f, z: %.1f", .{
+        self.camera_tp.position.x,
+        self.camera_tp.position.y,
+        self.camera_tp.position.z,
+    }), 12, 12, 24, .white);
+
+    rl.drawText(rl.textFormat("Mouse x: %d, y: %d", .{
+        rl.getMouseX(),
+        rl.getMouseY(),
+    }), 12, 32, 24, .white);
+
+    rl.drawText(rl.textFormat("FPS: %d", .{rl.getFPS()}), 12, 52, 24, .white);
+}
+
+var nickname_storage: [32]u8 = .{0} ** 32; // zero-initialized
+const nickname: [:0]u8 = nickname_storage[0..31 :0]; // length 31, sentinel at index 31
+
+fn drawLobby(self: *Self) !void {
+    rl.beginDrawing();
+    rl.clearBackground(.black);
+
+    const button_width = 256.0;
+    const button_height = 72.0;
+    const button_padding = 16.0;
+    const center_x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0;
+    const center_y = @as(f32, @floatFromInt(rl.getScreenHeight())) / 2.0;
+    const server_button_rect = rl.Rectangle.init(
+        center_x - button_width / 2.0,
+        center_y - button_height - button_padding,
+        button_width,
+        button_height,
+    );
+
+    rg.setStyle(.default, .{ .default = .text_size }, 24);
+    if (rg.button(server_button_rect, "Host server")) {
+        if (self.server == null) self.server = try Server.init(self.alloc, self.settings);
+    }
+
+    const client_button_rect = rl.Rectangle.init(
+        center_x - button_width / 2.0,
+        center_y,
+        button_width,
+        button_height,
+    );
+    if (rg.button(client_button_rect, "Connect to server") and nickname[0] != 0) { // only if nickname isn't empty
+        std.debug.print("nickname: '{s}'\n", .{nickname});
+
+        const lgd = LocalGameData{ .player = .{ .nickname = std.mem.sliceTo(nickname, 0) } };
+        if (self.client == null) self.client = try Client.init(self.alloc, self.settings, lgd);
+        self.state = .game;
+    }
+
+    rg.setStyle(.default, .{ .default = .text_size }, 10);
+
+    rl.drawText(
+        "Gnome Man's Land",
+        @as(i32, @intFromFloat(center_x)) - 220,
+        @as(i32, @intFromFloat(server_button_rect.y)) - 128,
+        48,
+        .white,
+    );
+
+    const name_box_width = 192.0;
+    const name_box_height = 48.0;
+    const name_box_rect = rl.Rectangle.init(
+        center_x - name_box_width / 2.0,
+        client_button_rect.y + client_button_rect.height + 24,
+        name_box_width,
+        name_box_height,
+    );
+
+    _ = rg.textBox(name_box_rect, nickname, nickname_storage.len, true);
+
+    rl.endDrawing();
+}
+
 pub fn loop(self: *Self) !void {
     while (!rl.windowShouldClose()) {
         switch (self.state) {
-            .lobby => {
-                if (!self.mouse_is_enabled) toggleMouse(&self.mouse_is_enabled);
-                rl.beginDrawing();
-                rl.clearBackground(.black);
-
-                if (rg.button(.init(12, 92, 256, 72), "Host server")) {
-                    if (self.server == null) self.server = try Server.init(self.alloc, self.settings);
-                }
-
-                if (rg.button(.init(12, 192, 256, 72), "Connect to server")) {
-                    if (self.client == null) self.client = try Client.init(self.alloc, self.settings);
-                    self.state = .game;
-                }
-
-                rl.endDrawing();
-                continue;
-            },
-            else => {
+            .lobby => try self.drawLobby(),
+            .game => {
                 // update step
-                if (rl.isMouseButtonDown(.right)) {
-                    if (self.mouse_is_enabled) toggleMouse(&self.mouse_is_enabled);
-
-                    centerMouse();
-                    switch (self.camera_mode) {
-                        .first_person => Camera.update(&self.camera_fp, .first_person),
-                        .isometric => Camera.update(&self.camera_tp, .third_person),
-                    }
-                } else if (!self.mouse_is_enabled) toggleMouse(&self.mouse_is_enabled);
-
-                if (rl.isKeyPressed(.minus)) {
-                    for (self.lights.items) |*l|
-                        l.intensity -= 0.1;
-                }
-
-                if (rl.isKeyPressed(.equal)) {
-                    for (self.lights.items) |*l|
-                        l.intensity += 0.1;
-                }
-
-                if (rl.isKeyPressed(.k))
-                    switch (self.camera_mode) {
-                        .first_person => self.camera_mode = .isometric,
-                        .isometric => self.camera_mode = .first_person,
-                    };
-
-                if (rl.isKeyPressed(.space))
-                    try self.client.?.sendMessage("ping!");
+                try self.handleKeys();
 
                 Light.updateLights(&switch (self.camera_mode) {
                     .first_person => self.camera_fp,
@@ -195,6 +261,8 @@ pub fn loop(self: *Self) !void {
                     .first_person => self.camera_fp,
                     .isometric => self.camera_tp,
                 });
+
+                // draw lights and models
                 self.light_shader.activate();
 
                 for (self.lights.items) |l| rl.drawSphere(l.position, 10, l.color);
@@ -207,18 +275,7 @@ pub fn loop(self: *Self) !void {
 
                 rl.endMode3D();
 
-                rl.drawText(rl.textFormat("Camera x: %.1f, y: %.1f, z: %.1f", .{
-                    self.camera_tp.position.x,
-                    self.camera_tp.position.y,
-                    self.camera_tp.position.z,
-                }), 12, 12, 24, .white);
-
-                rl.drawText(rl.textFormat("Mouse x: %d, y: %d", .{
-                    rl.getMouseX(),
-                    rl.getMouseY(),
-                }), 12, 32, 24, .white);
-
-                rl.drawText(rl.textFormat("FPS: %d", .{rl.getFPS()}), 12, 52, 24, .white);
+                self.drawUi();
 
                 rl.endDrawing();
             },

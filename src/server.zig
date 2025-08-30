@@ -1,5 +1,7 @@
 const std = @import("std");
-const Settings = @import("settings.zig");
+const Settings = @import("Settings.zig");
+const SocketPacket = @import("SocketPacket.zig");
+const ServerGameData = @import("ServerGameData.zig");
 
 const Self = @This();
 
@@ -9,10 +11,14 @@ open: bool,
 listen_thread: std.Thread,
 alloc: std.mem.Allocator,
 _gpa: std.heap.GeneralPurposeAllocator(.{}),
+polling_interval: u64,
+game_data: ServerGameData,
 
 pub fn init(alloc: std.mem.Allocator, st: *const Settings) !*Self {
     // Create UDP socket
     var self: *Self = try alloc.create(Self);
+
+    self.polling_interval = st.multiplayer.server_polling_interval;
     self.server_address = try std.net.Address.parseIp(st.multiplayer.server_host, st.multiplayer.server_port);
     self.sockfd = try std.posix.socket(
         self.server_address.any.family,
@@ -35,6 +41,7 @@ pub fn init(alloc: std.mem.Allocator, st: *const Settings) !*Self {
     try std.posix.bind(self.sockfd, &self.server_address.any, self.server_address.getOsSockLen());
 
     self.open = true;
+    self.game_data = try ServerGameData.init(self.alloc);
 
     self.listen_thread = try std.Thread.spawn(.{}, Self.listen, .{self});
 
@@ -44,6 +51,7 @@ pub fn init(alloc: std.mem.Allocator, st: *const Settings) !*Self {
 pub fn deinit(self: *Self) void {
     self.open = false;
     self.listen_thread.join();
+    self.game_data.deinit(self.alloc);
 
     std.posix.close(self.sockfd);
 
@@ -104,11 +112,42 @@ pub fn listen(self: *Self) !void {
 
         const message = self.receiveMessage(&buffer, &client_address, &client_address_len) catch |err| {
             if (err == error.NoDataAvailable) {
-                std.Thread.sleep(10 * 1e3);
+                std.Thread.sleep(self.polling_interval * 1000);
                 continue;
             }
             return err;
         };
+
+        const message_parsed: std.json.Parsed(std.json.Value) = try std.json.parseFromSlice(std.json.Value, self.alloc, message, .{});
+        defer message_parsed.deinit();
+
+        const message_root = message_parsed.value;
+        switch (message_root) {
+            .object => |object| {
+                var it = object.iterator();
+                while (it.next()) |entry| {
+                    const key = entry.key_ptr.*;
+                    if (std.mem.eql(u8, key, "connect")) {
+                        const request_parsed = try std.json.parseFromValue(
+                            SocketPacket.Connect,
+                            self.alloc,
+                            entry.value_ptr.*,
+                            .{},
+                        );
+                        defer request_parsed.deinit();
+
+                        const connect_request: SocketPacket.Connect = request_parsed.value;
+                        try self.game_data.players.append(self.alloc, .init(connect_request.nickname));
+
+                        const return_message = try std.json.Stringify.valueAlloc(self.alloc, self.game_data, .{});
+                        defer self.alloc.free(return_message);
+
+                        try self.sendMessage(return_message, &client_address, client_address_len);
+                    }
+                }
+            },
+            else => {},
+        }
 
         std.debug.print("Received from {f}: {s}\n", .{ client_address, message });
 
