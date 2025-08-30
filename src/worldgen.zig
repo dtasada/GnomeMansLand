@@ -9,9 +9,9 @@ const Perlin = @import("perlin.zig");
 
 const Self = @This();
 
-size: [2]u32,
+size: struct { x: u32, y: u32 },
 renderScale: f32,
-mapData: std.ArrayList(std.ArrayList(f32)),
+mapData: [][]f32,
 model: rl.Model,
 
 const Rgb = struct {
@@ -42,14 +42,14 @@ const Rgb = struct {
 };
 
 const Color = struct {
-    const waterLow = Rgb.init(0, 0, 50);
-    const waterHigh = Rgb.init(30, 110, 140);
-    const sandLow = Rgb.init(237, 206, 178);
-    const sandHigh = Rgb.init(255, 245, 193);
-    const grassLow = Rgb.init(10, 155, 104);
-    const grassHigh = Rgb.init(11, 84, 60);
-    const mountainLow = Rgb.init(80, 80, 80);
-    const mountainHigh = Rgb.init(120, 120, 120);
+    const WATER_LOW = Rgb.init(0, 0, 50);
+    const WATER_HIGH = Rgb.init(30, 110, 140);
+    const SAND_LOW = Rgb.init(237, 206, 178);
+    const SAND_HIGH = Rgb.init(255, 245, 193);
+    const GRASS_LOW = Rgb.init(10, 155, 104);
+    const GRASS_HIGH = Rgb.init(11, 84, 60);
+    const MOUNTAIN_LOW = Rgb.init(80, 80, 80);
+    const MOUNTAIN_HIGH = Rgb.init(120, 120, 120);
 };
 
 const TileData = struct {
@@ -64,19 +64,15 @@ fn lerp_color(c1: Rgb, c2: Rgb, m: f32) Rgb {
     return c1.add(c2.subtract(c1).scale(m)); // c1+(c2-c1)*m
 }
 
-pub fn init(alloc: std.mem.Allocator, st: Settings) !Self {
-    var self = Self{
-        .size = st.world_generation.resolution,
-        .mapData = .empty,
-        .renderScale = 1.0,
-        .model = undefined,
-    };
+pub fn init(alloc: std.mem.Allocator, st: *const Settings) !Self {
+    var self: Self = undefined;
+    self.size = .{ .x = st.world_generation.resolution[0], .y = st.world_generation.resolution[1] };
+    self.mapData = try alloc.alloc([]f32, self.size.y);
+    self.renderScale = 1.0;
+    self.model = undefined;
 
-    try self.mapData.resize(alloc, self.size[1]);
-    for (self.mapData.items) |*column| {
-        column.* = .empty;
-        try column.resize(alloc, self.size[0]);
-    }
+    for (0..self.mapData.len) |y|
+        self.mapData[y] = try alloc.alloc(f32, self.size.x);
 
     try self.genWorld(alloc, st);
     try self.genModel(st);
@@ -85,7 +81,7 @@ pub fn init(alloc: std.mem.Allocator, st: Settings) !Self {
     return self;
 }
 
-fn genWorld(self: *Self, alloc: std.mem.Allocator, st: Settings) !void {
+fn genWorld(self: *Self, alloc: std.mem.Allocator, st: *const Settings) !void {
     const seed: u32 = st.world_generation.seed orelse rand: {
         var seed: u32 = undefined;
         try std.posix.getrandom(std.mem.asBytes(&seed));
@@ -96,9 +92,9 @@ fn genWorld(self: *Self, alloc: std.mem.Allocator, st: Settings) !void {
     var pn = try Perlin.init(alloc, seed);
     defer pn.deinit(alloc);
 
-    for (0..self.size[1]) |y| {
-        for (0..self.size[0]) |x| {
-            var freq = 7.68 * st.world_generation.frequency / @as(f32, @floatFromInt(self.size[0]));
+    for (0..self.size.y) |y| {
+        for (0..self.size.x) |x| {
+            var freq = 7.68 * st.world_generation.frequency / @as(f32, @floatFromInt(self.size.x));
             var height: f32 = 0.0;
             var amp: f32 = st.world_generation.amplitude;
             var maxValue: f32 = 0.0;
@@ -116,31 +112,31 @@ fn genWorld(self: *Self, alloc: std.mem.Allocator, st: Settings) !void {
                 freq *= st.world_generation.lacunarity;
             }
 
-            self.mapData.items[y].items[x] = height;
+            self.mapData[y][x] = height;
         }
     }
 }
 
-fn genModel(self: *Self, st: Settings) !void {
+fn genModel(self: *Self, st: *const Settings) !void {
     self.model = try rl.Model.fromMesh(try self.genTerrainMesh());
     var image = rl.Image.genColor(
-        @intCast(self.size[0]),
-        @intCast(self.size[1]),
+        @intCast(self.size.x),
+        @intCast(self.size.y),
         .blue,
     );
 
-    for (0..self.size[1]) |y| {
-        for (0..self.size[0]) |x| {
+    for (0..self.size.y) |y| {
+        for (0..self.size.x) |x| {
             const height = (self.getHeight(x, y) + st.world_generation.amplitude) / (2 * st.world_generation.amplitude);
             const tile: Rgb =
                 if (height <= TileData.water)
-                    lerp_color(Color.waterLow, Color.waterHigh, height / TileData.water)
+                    lerp_color(Color.WATER_LOW, Color.WATER_HIGH, height / TileData.water)
                 else if (height <= TileData.sand)
-                    lerp_color(Color.sandLow, Color.sandHigh, (height - TileData.water) / (TileData.sand - TileData.water))
+                    lerp_color(Color.SAND_LOW, Color.SAND_HIGH, (height - TileData.water) / (TileData.sand - TileData.water))
                 else if (height <= TileData.grass)
-                    lerp_color(Color.grassLow, Color.grassHigh, (height - TileData.sand) / (TileData.grass - TileData.sand))
+                    lerp_color(Color.GRASS_LOW, Color.GRASS_HIGH, (height - TileData.sand) / (TileData.grass - TileData.sand))
                 else if (height <= TileData.mountain)
-                    lerp_color(Color.mountainLow, Color.mountainHigh, (height - TileData.grass) / (TileData.mountain - TileData.grass))
+                    lerp_color(Color.MOUNTAIN_LOW, Color.MOUNTAIN_HIGH, (height - TileData.grass) / (TileData.mountain - TileData.grass))
                 else
                     Rgb.init(240, 240, 240);
 
@@ -162,21 +158,20 @@ fn genModel(self: *Self, st: Settings) !void {
 
 fn genTerrainMesh(self: *Self) !rl.Mesh {
     var mesh: rl.Mesh = std.mem.zeroes(rl.Mesh);
-    const heightScale = 1.0;
 
-    const width = self.mapData.items[0].items.len;
-    const height = self.mapData.items.len;
+    const width = self.size.x;
+    const height = self.size.y;
 
-    const vertexCount = width * height;
-    const triangleCount = (width - 1) * (height - 1) * 2;
+    const vertex_count = width * height;
+    const triangle_count = (width - 1) * (height - 1) * 2;
 
-    mesh.vertexCount = @intCast(vertexCount);
-    mesh.triangleCount = @intCast(triangleCount);
+    mesh.vertexCount = @intCast(vertex_count);
+    mesh.triangleCount = @intCast(triangle_count);
 
-    mesh.vertices = @ptrCast(@alignCast(c.malloc(vertexCount * 3 * @sizeOf(f32))));
-    mesh.normals = @ptrCast(@alignCast(c.malloc(vertexCount * 3 * @sizeOf(f32))));
-    mesh.texcoords = @ptrCast(@alignCast(c.malloc(vertexCount * 2 * @sizeOf(f32))));
-    mesh.indices = @ptrCast(@alignCast(c.malloc(triangleCount * 3 * @sizeOf(u16))));
+    mesh.vertices = @ptrCast(@alignCast(c.malloc(vertex_count * 3 * @sizeOf(f32))));
+    mesh.normals = @ptrCast(@alignCast(c.malloc(vertex_count * 3 * @sizeOf(f32))));
+    mesh.texcoords = @ptrCast(@alignCast(c.malloc(vertex_count * 2 * @sizeOf(f32))));
+    mesh.indices = @ptrCast(@alignCast(c.malloc(triangle_count * 3 * @sizeOf(u16))));
 
     if (mesh.vertices == null or mesh.normals == null or
         mesh.texcoords == null or mesh.indices == null)
@@ -185,7 +180,7 @@ fn genTerrainMesh(self: *Self) !rl.Mesh {
     for (0..height) |y| {
         for (0..width) |x| {
             const index = y * width + x;
-            const noiseValue = self.getHeight(x, y);
+            const noise_value = self.getHeight(x, y);
 
             const x_f = @as(f32, @floatFromInt(x));
             const y_f = @as(f32, @floatFromInt(y));
@@ -193,7 +188,7 @@ fn genTerrainMesh(self: *Self) !rl.Mesh {
             const height_f = @as(f32, @floatFromInt(height));
 
             mesh.vertices[index * 3 + 0] = x_f - width_f / 2.0;
-            mesh.vertices[index * 3 + 1] = noiseValue * heightScale;
+            mesh.vertices[index * 3 + 1] = noise_value;
             mesh.vertices[index * 3 + 2] = y_f - height_f / 2.0;
 
             mesh.texcoords[index * 2 + 0] = @as(f32, @floatFromInt(x)) / @as(f32, @floatFromInt(width - 1));
@@ -201,27 +196,27 @@ fn genTerrainMesh(self: *Self) !rl.Mesh {
         }
     }
 
-    var triIndex: usize = 0;
+    var triangle_index: usize = 0;
     for (0..height - 1) |y| {
         for (0..width - 1) |x| {
-            const topLeft = y * width + x;
-            const topRight = topLeft + 1;
-            const bottomLeft = (y + 1) * width + x;
-            const bottomRight = bottomLeft + 1;
+            const top_left = y * width + x;
+            const top_right = top_left + 1;
+            const bottom_left = (y + 1) * width + x;
+            const bottom_right = bottom_left + 1;
 
-            mesh.indices[triIndex * 3 + 0] = @intCast(topLeft);
-            mesh.indices[triIndex * 3 + 1] = @intCast(bottomLeft);
-            mesh.indices[triIndex * 3 + 2] = @intCast(topRight);
-            triIndex += 1;
+            mesh.indices[triangle_index * 3 + 0] = @intCast(top_left);
+            mesh.indices[triangle_index * 3 + 1] = @intCast(bottom_left);
+            mesh.indices[triangle_index * 3 + 2] = @intCast(top_right);
+            triangle_index += 1;
 
-            mesh.indices[triIndex * 3 + 0] = @intCast(topRight);
-            mesh.indices[triIndex * 3 + 1] = @intCast(bottomLeft);
-            mesh.indices[triIndex * 3 + 2] = @intCast(bottomRight);
-            triIndex += 1;
+            mesh.indices[triangle_index * 3 + 0] = @intCast(top_right);
+            mesh.indices[triangle_index * 3 + 1] = @intCast(bottom_left);
+            mesh.indices[triangle_index * 3 + 2] = @intCast(bottom_right);
+            triangle_index += 1;
         }
     }
 
-    for (0..vertexCount) |i| {
+    for (0..vertex_count) |i| {
         mesh.normals[i * 3 + 0] = 0.0;
         mesh.normals[i * 3 + 1] = 1.0;
         mesh.normals[i * 3 + 2] = 0.0;
@@ -237,12 +232,16 @@ fn genTerrainMesh(self: *Self) !rl.Mesh {
 // }
 
 pub fn getHeight(self: *const Self, x: usize, y: usize) f32 {
-    return self.mapData.items[y].items[x];
+    return self.mapData[y][x];
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
-    for (self.mapData.items) |*col|
-        col.deinit(alloc);
+    // Free nested ArrayLists
+    for (0..self.mapData.len) |y|
+        alloc.free(self.mapData[y]);
 
-    self.mapData.deinit(alloc);
+    alloc.free(self.mapData);
+
+    // Free GPU resources
+    rl.unloadModel(self.model);
 }

@@ -2,11 +2,11 @@ const rl = @import("raylib");
 const std = @import("std");
 const Self = @This();
 
-const Type = enum(i32) { directional = 0, point = 1 };
+const LightType = enum(i32) { directional = 0, point = 1 };
 
 var lightsCount: i32 = 0;
 
-type: Type,
+type: LightType,
 enabled: bool,
 position: rl.Vector3,
 target: rl.Vector3,
@@ -19,7 +19,7 @@ positionLoc: i32,
 targetLoc: i32,
 colorLoc: i32,
 
-pub fn init(type_: Type, position: rl.Vector3, target: rl.Vector3, color: rl.Color, intensity: f32, shader: rl.Shader) Self {
+pub fn init(type_: LightType, position: rl.Vector3, target: rl.Vector3, color: rl.Color, intensity: f32, shader: rl.Shader) Self {
     var light = Self{
         .enabled = true,
         .type = type_,
@@ -64,7 +64,7 @@ fn update(self: *const Self, shader: rl.Shader) void {
     rl.setShaderValue(shader, self.colorLoc, &color, .vec4);
 }
 
-pub fn update_lights(camera: *rl.Camera, light_shader: rl.Shader, lights: std.ArrayList(Self)) void {
+pub fn updateLights(camera: *rl.Camera, light_shader: rl.Shader, lights: std.ArrayList(Self)) void {
     const cameraPos: [3]f32 = .{ camera.position.x, camera.position.y, camera.position.z };
     rl.setShaderValue(light_shader, light_shader.locs[@intFromEnum(rl.ShaderLocationIndex.vector_view)], &cameraPos, .vec3);
     for (lights.items) |l| l.update(light_shader);

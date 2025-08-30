@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const exe = b.addExecutable(.{
-        .name = "city",
+        .name = "gnome_mans_land",
         .root_module = exe_mod,
     });
 
