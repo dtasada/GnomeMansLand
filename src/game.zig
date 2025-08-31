@@ -26,6 +26,9 @@ state: enum { lobby, game },
 client: ?*Client,
 server: ?*Server,
 
+// additional camera attributes
+pan_sensitivity: f32 = 0.1,
+
 fn centerMouse() void {
     const margin = 24;
     const x = rl.getMouseX();
@@ -132,10 +135,29 @@ pub fn deinit(self: *Self) void {
 }
 
 fn handleKeys(self: *Self) !void {
-    // click to move the camera around
-    // if (rl.isMouseButtonPressed(.left)) {
-    //     std.debug.print("asd", .{});
-    // }
+    // pan the camera with middle mouse
+    if (rl.isMouseButtonDown(.middle)) {
+        const camDir = self.camera.target.subtract(self.camera.position).normalize();
+        const worldUp = Camera.getUp(&self.camera);
+        const camRight = camDir.crossProduct(worldUp).normalize();
+        const camUp = camRight.crossProduct(camDir);
+
+        const delta = rl.getMouseDelta();
+        const move_vector = camRight
+            .scale(-delta.x).add(camUp
+                .scale(delta.y))
+            .scale(2.0 / 9.0) // magic ratio that works
+            .scale(self.camera.fovy / 200);
+        self.camera.position = self.camera.position.add(move_vector);
+        self.camera.target = self.camera.target.add(move_vector);
+    }
+
+    // reset camera pan offset
+    if (rl.isKeyPressed(.z)) {
+        std.debug.print("asd\n", .{});
+        self.camera.position = rl.Vector3{ .x = 256, .y = 256, .z = 256 };
+        self.camera.target = rl.Vector3{ .x = 0, .y = 0, .z = 0 };
+    }
 
     const m = 5;
     self.camera.fovy = @max(@min(Camera.MAX_FOV, self.camera.fovy + -m * rl.getMouseWheelMove()), Camera.MIN_FOV);
@@ -185,20 +207,22 @@ fn drawUi(self: *Self) void {
 
     rl.drawText(rl.textFormat("FPS: %d", .{rl.getFPS()}), 12, 52, 24, .white);
 
-    const layers = [_][]const u8{
-        "water",
-        "sand",
-        "grass",
-        "mountain",
-        "snow",
-    };
-    inline for (0..5) |i| {
-        const rect = rl.Rectangle.init(60, 100 + @as(f32, @floatFromInt(i)) * 30, 200, 20);
-        // const up = commons.upper(self.alloc, layers[i]) catch "";
-        // defer self.alloc.free(up);
-        const up = layers[i];
-        _ = rg.slider(rect, up ++ "0.0", "1.0", &@field(WorldGen.TileData, layers[i]), 0, 1);
-    }
+    // const layers = [_][:0]const u8{
+    //     "water",
+    //     "sand",
+    //     "grass",
+    //     "mountain",
+    //     "snow",
+    // };
+    // rg.setStyle(.default, .{ .default = .text_size }, 24);
+    // inline for (0..5) |i| {
+    //     const rect = rl.Rectangle.init(140, 100 + @as(f32, @floatFromInt(i)) * 30, 200, 20);
+    //     // const up = commons.upper(self.alloc, layers[i]) catch "";
+    //     // defer self.alloc.free(up);
+    //     const up = layers[i];
+    //     _ = rg.slider(rect, up, "asd", &@field(WorldGen.TileData, layers[i]), 0, 1);
+    // }
+    // _ = rg.slider({.x_f})
 }
 
 var nickname_storage: [32]u8 = .{0} ** 32; // zero-initialized

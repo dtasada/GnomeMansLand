@@ -12,16 +12,16 @@ const CAMERA_MOUSE_MOVE_SENSITIVITY = 0.003; // Camera mouse movement sensitivit
 // Camera orbital speed in CAMERA_ORBITAL mode
 const CAMERA_ORBITAL_SPEED = 0.5; // Radians per second
 
-fn getForward(camera: *rl.Camera) rl.Vector3 {
+pub fn getForward(camera: *rl.Camera) rl.Vector3 {
     return camera.target.subtract(camera.position).normalize();
 }
 
-fn getUp(camera: *rl.Camera) rl.Vector3 {
+pub fn getUp(camera: *rl.Camera) rl.Vector3 {
     return camera.up.normalize();
 }
 
 // Returns the cameras right vector (normalized)
-fn getRight(camera: *rl.Camera) rl.Vector3 {
+pub fn getRight(camera: *rl.Camera) rl.Vector3 {
     const forward = getForward(camera);
     const up = getUp(camera);
 
