@@ -1,3 +1,4 @@
+//! Basic lighting implementation
 const rl = @import("raylib");
 const std = @import("std");
 const Self = @This();

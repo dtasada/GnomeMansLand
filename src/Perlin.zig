@@ -1,3 +1,4 @@
+//! Perlin noise algorithm implementation
 const std = @import("std");
 const Self = @This();
 

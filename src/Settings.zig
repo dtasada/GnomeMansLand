@@ -1,3 +1,4 @@
+//! Container for game configuration pulled from config.json
 const std = @import("std");
 
 video: struct {

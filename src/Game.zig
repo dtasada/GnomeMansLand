@@ -1,14 +1,17 @@
-const rl = @import("raylib");
+//! Wrapper for general game state and loop
 const std = @import("std");
+
 const rg = @import("raygui");
+const rl = @import("raylib");
+
 const Camera = @import("rcamera.zig");
-const Light = @import("Light.zig");
-const Settings = @import("Settings.zig");
-const WorldGen = @import("WorldGen.zig");
-const Server = @import("Server.zig");
 const Client = @import("Client.zig");
-const LocalGameData = @import("LocalGameData.zig");
+const ClientGameData = @import("ClientGameData.zig");
 const commons = @import("commons.zig");
+const Light = @import("Light.zig");
+const Server = @import("Server.zig");
+const Settings = @import("Settings.zig");
+const SocketPacket = @import("SocketPacket.zig");
 
 const Self = @This();
 
@@ -16,7 +19,6 @@ _gpa: std.heap.GeneralPurposeAllocator(.{}),
 _settings_parsed: std.json.Parsed(Settings),
 alloc: std.mem.Allocator,
 settings: *const Settings,
-world_gen: WorldGen,
 camera: rl.Camera3D,
 camera_mode: enum { first_person, isometric },
 light_shader: rl.Shader,
@@ -70,10 +72,6 @@ fn setupLights(self: *Self) !void {
         1,
         self.light_shader,
     ));
-    // try lights.append(alloc, Light.init(.point, rl.Vector3.init(-2, 20, -2), rl.Vector3.zero(), .yellow, 0.5, light_shader));
-    // try lights.append(alloc, Light.init(.point, rl.Vector3.init(2, 20, 2), rl.Vector3.zero(), .red, 0.5, light_shader));
-    // try lights.append(alloc, Light.init(.point, rl.Vector3.init(-2, 20, 2), rl.Vector3.zero(), .green, 0.5, light_shader));
-    // try lights.append(alloc, Light.init(.point, rl.Vector3.init(2, 20, -2), rl.Vector3.zero(), .blue, 0.5, light_shader));
 }
 
 fn parseConfig(alloc: std.mem.Allocator) !std.json.Parsed(Settings) {
@@ -86,17 +84,15 @@ fn parseConfig(alloc: std.mem.Allocator) !std.json.Parsed(Settings) {
 pub fn init(alloc: std.mem.Allocator) !*Self {
     var self: *Self = try alloc.create(Self);
 
-    self._gpa = std.heap.GeneralPurposeAllocator(.{}).init;
+    self._gpa = .init;
     self.alloc = self._gpa.allocator();
 
     self._settings_parsed = try parseConfig(self.alloc);
     self.settings = &self._settings_parsed.value;
 
-    self.world_gen = try WorldGen.init(self.alloc, self.settings);
-
     self.camera = .{
         .fovy = 100,
-        .position = rl.Vector3.one().scale(@floatFromInt(self.world_gen.size.x)),
+        .position = rl.Vector3.one().scale(@floatFromInt(self.settings.world_generation.resolution[0])),
         .projection = .orthographic,
         .target = rl.Vector3.zero(),
         .up = rl.Vector3.init(0, 1, 0),
@@ -105,7 +101,6 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
     self.camera_mode = .isometric;
 
     try self.setupLights();
-    self.world_gen.model.materials[0].shader = self.light_shader;
 
     self.mouse_is_enabled = true;
     self.state = .lobby;
@@ -129,7 +124,6 @@ pub fn deinit(self: *Self) void {
 
     self.lights.deinit(self.alloc);
     self.light_shader.unload();
-    self.world_gen.deinit(self.alloc);
     self._settings_parsed.deinit();
     _ = self._gpa.deinit();
 }
@@ -179,13 +173,6 @@ fn handleKeys(self: *Self) !void {
     if (rl.isKeyPressed(.equal)) {
         for (self.lights.items) |*l|
             l.intensity += 0.1;
-    }
-
-    // regenerate terrain
-    if (rl.isKeyPressed(.r)) {
-        std.debug.print("RESET", .{});
-        self.world_gen.deinit(self.alloc);
-        self.world_gen = try .init(self.alloc, self.settings);
     }
 
     // client-server ping
@@ -256,10 +243,12 @@ fn drawLobby(self: *Self) !void {
         button_height,
     );
     if (rg.button(client_button_rect, "Connect to server") and nickname[0] != 0) { // only if nickname isn't empty
-        std.debug.print("nickname: '{s}'\n", .{nickname});
-
-        const lgd = LocalGameData{ .player = .{ .nickname = std.mem.sliceTo(nickname, 0) } };
-        if (self.client == null) self.client = try Client.init(self.alloc, self.settings, lgd);
+        var nickname_trimmed = std.mem.splitAny(u8, nickname, "\x00");
+        if (self.client == null) self.client = try Client.init(
+            self.alloc,
+            self.settings,
+            SocketPacket.ClientConnect.init(nickname_trimmed.first()),
+        );
         self.state = .game;
     }
 
@@ -309,7 +298,13 @@ pub fn loop(self: *Self) !void {
                 for (self.lights.items) |l| rl.drawSphere(l.position, 10, l.color);
 
                 rl.gl.rlDisableBackfaceCulling();
-                rl.drawModel(self.world_gen.model, rl.Vector3.zero(), 1.0, .white);
+                if (self.client.?.game_data.world_data) |*world_data| {
+                    if (world_data.model) |model| {
+                        rl.drawModel(model, rl.Vector3.zero(), 1.0, .white);
+                    } else {
+                        try world_data.genModel(self.settings, self.light_shader);
+                    }
+                }
                 rl.gl.rlEnableBackfaceCulling();
 
                 self.light_shader.deactivate();

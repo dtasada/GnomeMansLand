@@ -1,3 +1,5 @@
+//! Program entry point
+
 const rl = @import("raylib");
 const std = @import("std");
 const rg = @import("raygui");
