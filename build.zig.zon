@@ -17,6 +17,10 @@
             .url = "https://github.com/timfayz/pretty/archive/refs/heads/main.tar.gz",
             .hash = "pretty-0.10.4-Tm65r5pKAQDdxCFNtL6huo7lHc_HWn6v4VO5WaTufpRQ",
         },
+        .network = .{
+            .url = "https://github.com/MasterQ32/zig-network/archive/92cd82679d0fc065cbbdb6c446b9e561a75a44a6.tar.gz",
+            .hash = "network-0.1.0-Pm-AgmUxAQD-rOaM_3wMkaxea1PBKda1Hn6F82Nw1F3u",
+        },
     },
     .paths = .{
         "build.zig",

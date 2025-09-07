@@ -13,6 +13,9 @@ pub const ClientConnect = struct {
 
 pub const WorldDataChunk = struct {
     descriptor: []const u8,
+    chunk_index: u32,
+    float_start_index: u32,
+    float_end_index: u32,
     total_size: [2]u32,
     height_map: []f32, // 2d in practice
 
@@ -20,9 +23,9 @@ pub const WorldDataChunk = struct {
     pub fn init(alloc: std.mem.Allocator, server_world_data: ServerGameData.WorldData) ![]WorldDataChunk {
         const MAX_SIZE_BYTES = 65535;
         const JSON_FLOAT_SIZE = 20;
-        const json_overhead = 200;
+        const JSON_OVERHEAD = 200;
 
-        const available_bytes_for_data = MAX_SIZE_BYTES - json_overhead;
+        const available_bytes_for_data = MAX_SIZE_BYTES - JSON_OVERHEAD;
 
         const floats_per_chunk = @divFloor(available_bytes_for_data, JSON_FLOAT_SIZE);
         const total_floats = server_world_data.height_map.len;
@@ -38,11 +41,23 @@ pub const WorldDataChunk = struct {
             std.debug.print("server: chunk amount of floats: {}\n", .{end_idx - start_idx});
 
             chunks[i] = WorldDataChunk{
-                .descriptor = "world_data_chunk",
+                .descriptor = try std.fmt.allocPrint(alloc, "world_data_chunk-{}", .{i}),
+                .chunk_index = @intCast(i),
+                .float_start_index = @intCast(start_idx),
+                .float_end_index = @intCast(end_idx),
                 .total_size = .{ server_world_data.size.x, server_world_data.size.y },
                 .height_map = server_world_data.height_map[start_idx..end_idx],
             };
         }
         return chunks;
+    }
+};
+
+pub const ResendRequest = struct {
+    descriptor: []const u8 = "resend_request",
+    body: []const u8,
+
+    pub fn init(body: []const u8) ResendRequest {
+        return .{ .body = body };
     }
 };

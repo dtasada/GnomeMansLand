@@ -98,16 +98,18 @@ pub const WorldData = struct {
     }
 
     pub fn addChunk(self: *WorldData, world_data_chunk: SocketPacket.WorldDataChunk) void {
-        std.debug.print("Client: processing floats {}-{}\n", .{ self._height_map_filled, self._height_map_filled + world_data_chunk.height_map.len });
-        @memcpy(self.height_map[self._height_map_filled .. self._height_map_filled + world_data_chunk.height_map.len], world_data_chunk.height_map);
+        @memcpy(self.height_map[world_data_chunk.float_start_index..world_data_chunk.float_end_index], world_data_chunk.height_map);
         self._height_map_filled += world_data_chunk.height_map.len;
+        std.debug.print("Successfully added chunk\n", .{});
+
+        self.model = null; // invalidate model so Game.zig will regen it.
     }
 
     pub fn deinit(self: *WorldData, alloc: std.mem.Allocator) void {
         alloc.free(self.height_map);
 
         // Free GPU resources
-        rl.unloadModel(self.model.?);
+        if (self.model) |m| rl.unloadModel(m);
     }
 
     pub fn genModel(self: *WorldData, st: *const Settings, light_shader: rl.Shader) !void {
@@ -145,10 +147,12 @@ pub const WorldData = struct {
                 );
             }
         }
-        const tex = try rl.Texture.fromImage(image);
+        const tex = try rl.Texture.fromImage(image); // do not deinit the texture lol
 
-        self.model.?.materials[0].maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = tex;
-        self.model.?.materials[0].shader = light_shader;
+        if (self.model) |*m| {
+            m.materials[0].maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = tex;
+            m.materials[0].shader = light_shader;
+        }
     }
 
     fn genTerrainMesh(self: *WorldData) !rl.Mesh {

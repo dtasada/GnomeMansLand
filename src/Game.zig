@@ -177,7 +177,7 @@ fn handleKeys(self: *Self) !void {
 
     // client-server ping
     if (rl.isKeyPressed(.space))
-        try self.client.?.sendMessage("ping!");
+        try self.client.?.send("ping!");
 }
 
 fn drawUi(self: *Self) void {

@@ -1,6 +1,7 @@
 //! TCP server struct
 const std = @import("std");
 const builtin = @import("builtin");
+const network = @import("network");
 
 const ServerGameData = @import("ServerGameData.zig");
 const Settings = @import("Settings.zig");
@@ -8,244 +9,70 @@ const SocketPacket = @import("SocketPacket.zig");
 
 const Self = @This();
 
-sockfd: std.posix.socket_t,
-server_address: std.net.Address,
-open: std.atomic.Value(bool),
-listen_thread: std.Thread,
-alloc: std.mem.Allocator,
 _gpa: std.heap.GeneralPurposeAllocator(.{}),
-polling_interval: u64,
+alloc: std.mem.Allocator,
+sock: network.Socket,
+clients: std.ArrayList(*Client),
+listen_thread: std.Thread,
+running: std.atomic.Value(bool),
 game_data: ServerGameData,
+world_data_chunks: []SocketPacket.WorldDataChunk,
 
-clients: std.ArrayList(ClientConnection),
-next_client_id: u32,
+const Client = struct {
+    sock: network.Socket,
+    handle_thread: std.Thread,
 
-const ClientConnection = struct {
-    stream: std.net.Stream,
-    address: std.net.Address,
-    id: u32,
-    // Buffer for accumulating incoming data per client
-    receive_buffer: std.ArrayList(u8),
-    expected_message_length: ?u32,
+    pub fn send(self: *Client, alloc: std.mem.Allocator, message: []const u8) !void {
+        const message_newline = try std.fmt.allocPrint(alloc, "{s}\n", .{message});
+        defer alloc.free(message_newline);
+        _ = self.sock.send(message_newline) catch |err| {
+            std.debug.print("Couldn't send: {}. Trying again in 200 ms...\n", .{err});
+            std.Thread.sleep(200 * std.time.ns_per_ms); // sleep for 200 ms
+            try self.send(alloc, message); // try again
+        };
+    }
 };
 
-pub fn init(alloc: std.mem.Allocator, st: *const Settings) !*Self {
-    var self: *Self = try alloc.create(Self);
+fn handleClient(
+    self: *Self,
+    client: *Client,
+) !void {
+    defer client.sock.close();
 
-    // Create TCP socket
-    self.polling_interval = st.multiplayer.server_polling_interval;
-    self.server_address = try std.net.Address.parseIp(st.multiplayer.server_host, st.multiplayer.server_port);
-    self.sockfd = try std.posix.socket(
-        self.server_address.any.family,
-        std.posix.SOCK.STREAM,
-        std.posix.IPPROTO.TCP,
-    );
+    var buf_: [64]u8 = undefined;
+    var writer = client.sock.writer(&buf_);
+    try writer.interface.writeAll("server: welcome to server!!!!!\n");
 
-    self._gpa = .init;
-    self.alloc = self._gpa.allocator();
+    var buf: []u8 = try self.alloc.alloc(u8, 65535);
+    defer self.alloc.free(buf);
 
-    // Allow address reuse
-    try std.posix.setsockopt(
-        self.sockfd,
-        std.posix.SOL.SOCKET,
-        std.posix.SO.REUSEADDR,
-        &std.mem.toBytes(@as(c_int, 1)),
-    );
+    while (self.running.load(.monotonic)) {
+        const bytes_read = client.sock.receive(buf) catch |err| switch (err) {
+            error.WouldBlock => continue,
+            error.ConnectionResetByPeer => {
+                self.running.store(false, .monotonic);
+                std.debug.print("Socket disconnected\n", .{});
+                return;
+            },
+            else => {
+                std.debug.print("Couldn't read from socket: {}\n", .{err});
+                return err;
+            },
+        };
 
-    // Bind socket to address
-    try std.posix.bind(self.sockfd, &self.server_address.any, self.server_address.getOsSockLen());
+        if (bytes_read == 0) break;
 
-    try std.posix.listen(self.sockfd, 8);
+        const message = buf[0..bytes_read];
+        std.debug.print("Client wrote: {s}\n", .{message});
 
-    self.open = std.atomic.Value(bool).init(true);
-    self.game_data = try ServerGameData.init(self.alloc, st);
-
-    self.clients = try std.ArrayList(ClientConnection).initCapacity(self.alloc, 8);
-    self.next_client_id = 0;
-
-    try setNonBlocking(self.sockfd);
-    // Set timeout for the server socket
-    try setSocketTimeout(self.sockfd, @intCast(self.polling_interval));
-
-    self.listen_thread = try std.Thread.spawn(.{}, Self.listen, .{self});
-
-    return self;
-}
-
-pub fn deinit(self: *Self) void {
-    std.debug.print("Deinitializing server...\n", .{});
-
-    // Signal thread to stop
-    self.open.store(false, .monotonic);
-
-    // Force close the server socket to unblock accept() if it's waiting
-    // This will cause accept() to return an error and exit the loop
-    std.posix.close(self.sockfd);
-
-    // Wait for listen thread to finish
-    self.listen_thread.join();
-
-    // Clean up all clients
-    for (self.clients.items) |*client| {
-        client.stream.close();
-        client.receive_buffer.deinit(self.alloc);
+        try self.handleMessage(client, message);
     }
-    self.clients.deinit(self.alloc);
 
-    self.game_data.deinit(self.alloc);
-    // sockfd already closed above
-    _ = self._gpa.deinit();
-
-    std.debug.print("Deinitialized server\n", .{});
+    std.debug.print("Client disconnected.\n", .{});
 }
 
-fn setNonBlocking(sockfd: std.posix.socket_t) !void {
-    switch (builtin.os.tag) {
-        .windows => {
-            var nonblocking: c_ulong = 1;
-            const result = std.os.windows.ws2_32.ioctlsocket(
-                sockfd,
-                std.os.windows.ws2_32.FIONBIO,
-                &nonblocking,
-            );
-            if (result != 0) return error.SetNonBlockingFailed;
-        },
-        else => {
-            const flags = try std.posix.fcntl(sockfd, std.posix.F.GETFL, 0);
-            _ = try std.posix.fcntl(
-                sockfd,
-                std.posix.F.SETFL,
-                flags | std.posix.SOCK.NONBLOCK,
-            );
-        },
-    }
-}
-
-fn setSocketTimeout(sockfd: std.posix.socket_t, timeout_ms: u32) !void {
-    const timeout = std.posix.timeval{
-        .sec = @intCast(timeout_ms / 1000),
-        .usec = @intCast((timeout_ms % 1000) * 1000),
-    };
-
-    // Set both receive and send timeouts
-    try std.posix.setsockopt(
-        sockfd,
-        std.posix.SOL.SOCKET,
-        std.posix.SO.RCVTIMEO,
-        std.mem.asBytes(&timeout),
-    );
-
-    try std.posix.setsockopt(
-        sockfd,
-        std.posix.SOL.SOCKET,
-        std.posix.SO.SNDTIMEO,
-        std.mem.asBytes(&timeout),
-    );
-}
-
-fn acceptNewClient(self: *Self) !void {
-    var client_address: std.net.Address = undefined;
-    var client_address_len: std.posix.socklen_t = @sizeOf(std.posix.sockaddr);
-
-    const client_sockfd = std.posix.accept(
-        self.sockfd,
-        @ptrCast(&client_address.any),
-        &client_address_len,
-        0,
-    ) catch |err| switch (err) {
-        error.WouldBlock => return err, // No pending connections
-        // Most other errors during shutdown indicate the socket was closed
-        error.FileDescriptorNotASocket, error.SocketNotListening, error.OperationNotSupported => {
-            return error.ServerShuttingDown;
-        },
-        error.ConnectionAborted => return err,
-        else => {
-            std.debug.print("Unexpected accept error: {}\n", .{err});
-            return error.ServerShuttingDown;
-        },
-    };
-
-    // Set the client socket to non-blocking and with timeout
-    try setNonBlocking(client_sockfd);
-    try setSocketTimeout(client_sockfd, @intCast(self.polling_interval));
-
-    const client = ClientConnection{
-        .stream = .{ .handle = client_sockfd },
-        .address = client_address,
-        .id = self.next_client_id,
-        .receive_buffer = try std.ArrayList(u8).initCapacity(self.alloc, 8),
-        .expected_message_length = null,
-    };
-
-    try self.clients.append(self.alloc, client);
-    self.next_client_id += 1;
-
-    std.debug.print("New client {} connected from {f}\n", .{ client.id, client.address });
-}
-
-// Non-blocking receive for a specific client
-fn receiveDataFromClient(self: *Self, client: *ClientConnection) !?[]u8 {
-    var temp_buffer: [4096]u8 = undefined;
-
-    // Try to read data without blocking
-    const bytes_read = client.stream.read(temp_buffer[0..]) catch |err| switch (err) {
-        error.WouldBlock => return null, // No data available right now
-        error.ConnectionResetByPeer, error.BrokenPipe => return error.ClientDisconnected,
-        else => return err,
-    };
-
-    if (bytes_read == 0) return error.ClientDisconnected;
-
-    // Add received data to client's buffer
-    try client.receive_buffer.appendSlice(self.alloc, temp_buffer[0..bytes_read]);
-
-    // Try to extract complete messages
-    while (true) {
-        // If we don't know the expected length, try to read it
-        if (client.expected_message_length == null) {
-            if (client.receive_buffer.items.len < 4) {
-                return null; // Need more data for length header
-            }
-
-            // Extract length from first 4 bytes
-            const len_bytes = client.receive_buffer.items[0..4];
-            client.expected_message_length = std.mem.bytesToValue(u32, len_bytes);
-
-            // Sanity check
-            if (client.expected_message_length.? == 0) return error.EmptyMessage;
-            if (client.expected_message_length.? > 1024 * 1024) return error.MessageTooLarge;
-
-            // Remove length header from buffer
-            std.mem.copyForwards(u8, client.receive_buffer.items, client.receive_buffer.items[4..]);
-            client.receive_buffer.shrinkRetainingCapacity(client.receive_buffer.items.len - 4);
-        }
-
-        // Check if we have a complete message
-        if (client.receive_buffer.items.len >= client.expected_message_length.?) {
-            const msg_len = client.expected_message_length.?;
-
-            // Extract the complete message
-            const message = try self.alloc.dupe(u8, client.receive_buffer.items[0..msg_len]);
-
-            // Remove processed message from buffer
-            std.mem.copyForwards(u8, client.receive_buffer.items, client.receive_buffer.items[msg_len..]);
-            client.receive_buffer.shrinkRetainingCapacity(client.receive_buffer.items.len - msg_len);
-
-            // Reset expected length for next message
-            client.expected_message_length = null;
-
-            return message;
-        } else {
-            return null; // Need more data for complete message
-        }
-    }
-}
-
-fn handleClientMessage(self: *Self, client_idx: usize, message: []const u8) !void {
-    const client = &self.clients.items[client_idx];
-
-    std.debug.print("Received from client {}: {s}\n", .{ client.id, message });
-
+/// Parses, handles and responds to message accordingly
+fn handleMessage(self: *Self, client: *Client, message: []u8) !void {
     const message_parsed: std.json.Parsed(std.json.Value) = try std.json.parseFromSlice(std.json.Value, self.alloc, message, .{});
     defer message_parsed.deinit();
 
@@ -273,14 +100,32 @@ fn handleClientMessage(self: *Self, client_idx: usize, message: []const u8) !voi
                         try self.game_data.players.append(self.alloc, ServerGameData.Player.init(connect_request.nickname));
 
                         // Send response to this specific client
-                        const world_data_chunks = try SocketPacket.WorldDataChunk.init(self.alloc, self.game_data.world_data);
-                        defer self.alloc.free(world_data_chunks);
-
-                        for (0..world_data_chunks.len) |i| {
-                            const world_data_string = try std.json.Stringify.valueAlloc(self.alloc, world_data_chunks[i], .{});
+                        for (self.world_data_chunks) |chunk| {
+                            const world_data_string = try std.json.Stringify.valueAlloc(self.alloc, chunk, .{});
                             defer self.alloc.free(world_data_string);
-                            std.debug.print("Server: world data chunk length: {}\n", .{world_data_string.len});
-                            try self.sendMessageToClient(client_idx, world_data_string);
+
+                            try client.send(self.alloc, world_data_string);
+                        }
+                    } else if (std.mem.eql(u8, descriptor, "resend_request")) {
+                        const request_parsed = try std.json.parseFromValue(
+                            SocketPacket.ResendRequest,
+                            self.alloc,
+                            message_root,
+                            .{},
+                        );
+                        defer request_parsed.deinit();
+
+                        const resend_request: SocketPacket.ResendRequest = request_parsed.value;
+                        if (std.mem.startsWith(u8, resend_request.body, "world_data_chunk-")) {
+                            var split = std.mem.splitAny(u8, resend_request.body, "-");
+                            split.index = 1;
+                            const chunk_index = try std.fmt.parseInt(u32, split.next().?, 10);
+                            std.debug.print("chunk index: {}\n", .{chunk_index});
+
+                            const chunk = self.world_data_chunks[chunk_index];
+                            const world_data_string = try std.json.Stringify.valueAlloc(self.alloc, chunk, .{});
+                            defer self.alloc.free(world_data_string);
+                            try client.send(self.alloc, world_data_string);
                         }
                     }
                 }
@@ -290,77 +135,72 @@ fn handleClientMessage(self: *Self, client_idx: usize, message: []const u8) !voi
     }
 }
 
-fn sendMessageToClient(self: *Self, client_idx: usize, message: []const u8) !void {
-    const client = &self.clients.items[client_idx];
+pub fn init(alloc: std.mem.Allocator, st: *const Settings) !*Self {
+    var self: *Self = try alloc.create(Self);
 
-    // Send message length first (4 bytes), then message
-    const msg_len: u32 = @intCast(message.len);
-    const len_bytes = std.mem.asBytes(&msg_len);
+    self._gpa = .init;
+    self.alloc = self._gpa.allocator();
+    self.clients = try std.ArrayList(*Client).initCapacity(self.alloc, 8);
+    self.game_data = try ServerGameData.init(self.alloc, st);
+    self.world_data_chunks = try SocketPacket.WorldDataChunk.init(self.alloc, self.game_data.world_data);
 
-    _ = client.stream.write(len_bytes) catch |err| {
-        std.debug.print("Failed to send length to client {}: {}\n", .{ client.id, err });
-        return err;
-    };
+    try network.init();
+    self.sock = try network.Socket.create(.ipv4, .tcp);
 
-    _ = client.stream.write(message) catch |err| {
-        std.debug.print("Failed to send message to client {}: {}\n", .{ client.id, err });
-        return err;
-    };
+    try self.sock.bindToPort(st.multiplayer.server_port);
 
-    // std.debug.print("Sent to client {}: {s}\n", .{ client.id, message });
+    try self.sock.listen();
+
+    self.running = std.atomic.Value(bool).init(true);
+
+    self.listen_thread = try std.Thread.spawn(.{}, Self.listen, .{self});
+
+    try self.sock.setReadTimeout(2000 * 1000);
+
+    return self;
 }
 
-pub fn listen(self: *Self) !void {
-    std.debug.print("TCP Server listening on {f}\n", .{self.server_address});
+pub fn deinit(self: *Self) void {
+    for (self.world_data_chunks) |chunk|
+        self.alloc.free(chunk.descriptor);
+    self.alloc.free(self.world_data_chunks);
 
-    while (self.open.load(.monotonic)) {
-        // Accept new connections (non-blocking)
-        self.acceptNewClient() catch |err| switch (err) {
-            error.WouldBlock => {}, // No pending connections, continue
+    self.game_data.deinit(self.alloc);
+    self.running.store(false, .monotonic);
+
+    self.listen_thread.detach(); // this works for some reason. see thousand yard stare
+
+    for (self.clients.items) |client| {
+        client.handle_thread.join();
+        self.alloc.destroy(client);
+    }
+
+    self.clients.deinit(self.alloc);
+
+    self.sock.close();
+
+    network.deinit();
+
+    _ = self._gpa.deinit();
+}
+
+fn listen(self: *Self) !void {
+    while (self.running.load(.monotonic)) {
+        if (self.sock.accept()) |sock| {
+            var client: *Client = try self.alloc.create(Client);
+            client.sock = sock;
+            client.handle_thread = try std.Thread.spawn(.{}, handleClient, .{ self, client });
+
+            try self.clients.append(self.alloc, client);
+
+            std.debug.print("Client connected from {f}.\n", .{try client.sock.getLocalEndPoint()});
+        } else |err| switch (err) {
+            error.WouldBlock => {},
             error.ConnectionAborted => {},
-            error.ServerShuttingDown => {
+            else => {
                 std.debug.print("Server socket closed, shutting down...\n", .{});
                 break;
             },
-            else => {
-                std.debug.print("Accept error: {}\n", .{err});
-            },
-        };
-        std.debug.print("Server continuing after accepting client...\n", .{});
-
-        // Handle messages from existing clients
-        var i: usize = 0;
-        while (i < self.clients.items.len) {
-            var client = &self.clients.items[i];
-
-            if (self.receiveDataFromClient(client)) |message_opt| {
-                if (message_opt) |message| {
-                    defer self.alloc.free(message);
-
-                    // Handle the message
-                    self.handleClientMessage(i, message) catch |err| {
-                        std.debug.print("Error handling message from client {}: {}\n", .{ client.id, err });
-                    };
-                }
-                i += 1;
-            } else |err| switch (err) {
-                error.ClientDisconnected => {
-                    std.debug.print("Client {} disconnected\n", .{client.id});
-                    client.stream.close();
-                    client.receive_buffer.deinit(self.alloc);
-                    _ = self.clients.swapRemove(i);
-                    // Don't increment i, we removed an item
-                },
-                else => {
-                    std.debug.print("Error receiving from client {}: {}\n", .{ client.id, err });
-                    i += 1;
-                },
-            }
         }
-
-        // Brief sleep to avoid busy waiting when no clients or activity
-        std.Thread.sleep(self.polling_interval * std.time.ns_per_ms);
     }
-
-    std.debug.print("Server listen thread ending\n", .{});
 }
