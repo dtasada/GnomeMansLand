@@ -1,5 +1,6 @@
 //! Container for game configuration pulled from config.json
 const std = @import("std");
+const ServerSettings = @import("ServerSettings.zig");
 
 video: struct {
     resolution: [2]i32,
@@ -19,9 +20,7 @@ world_generation: struct {
     frequency: f32,
     amplitude: f32,
 },
-server: struct {
-    port: u16,
-},
+server: ServerSettings,
 
 pub fn print(self: *const @This()) void {
     std.debug.print("video: struct {{\n", .{});

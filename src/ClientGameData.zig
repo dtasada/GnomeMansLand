@@ -1,12 +1,14 @@
 //! Container for game data owned by the client
 const std = @import("std");
 const rl = @import("raylib");
+const commons = @import("commons.zig");
 const c = @cImport({
     @cInclude("stdlib.h");
 });
 
 const SocketPacket = @import("SocketPacket.zig");
 const Settings = @import("Settings.zig");
+pub const Player = @import("ServerGameData.zig").Player;
 
 const ClientGameData = @This();
 
@@ -16,21 +18,21 @@ players: std.ArrayList(Player),
 pub fn init(alloc: std.mem.Allocator) !ClientGameData {
     return .{
         .world_data = null,
-        .players = try .initCapacity(alloc, 8),
+        .players = try std.ArrayList(Player).initCapacity(alloc, 1),
     };
 }
 
 pub fn deinit(self: *ClientGameData, alloc: std.mem.Allocator) void {
-    if (self.world_data) |*world_data| {
+    if (self.world_data) |*world_data|
         world_data.deinit(alloc);
-    }
+
     self.players.deinit(alloc);
 }
 
 pub const WorldData = struct {
     height_map: []f32, // 2d in practice
     _height_map_filled: usize,
-    size: struct { x: u32, y: u32 },
+    size: commons.v2u,
     model: ?rl.Model,
 
     const Rgb = struct {
@@ -87,7 +89,7 @@ pub const WorldData = struct {
     pub fn init(alloc: std.mem.Allocator, first_packet: SocketPacket.WorldDataChunk) !WorldData {
         var self: WorldData = undefined;
 
-        self.size = .{ .x = first_packet.total_size[0], .y = first_packet.total_size[1] };
+        self.size = first_packet.total_size;
         self.height_map = try alloc.alloc(f32, self.size.x * self.size.y);
         self._height_map_filled = 0;
         self.model = null;
@@ -100,9 +102,10 @@ pub const WorldData = struct {
     pub fn addChunk(self: *WorldData, world_data_chunk: SocketPacket.WorldDataChunk) void {
         @memcpy(self.height_map[world_data_chunk.float_start_index..world_data_chunk.float_end_index], world_data_chunk.height_map);
         self._height_map_filled += world_data_chunk.height_map.len;
-        std.debug.print("Successfully added chunk\n", .{});
+    }
 
-        self.model = null; // invalidate model so Game.zig will regen it.
+    pub fn isComplete(self: *WorldData) bool {
+        return self._height_map_filled == self.size.x * self.size.y;
     }
 
     pub fn deinit(self: *WorldData, alloc: std.mem.Allocator) void {
@@ -153,6 +156,14 @@ pub const WorldData = struct {
             m.materials[0].maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = tex;
             m.materials[0].shader = light_shader;
         }
+
+        const translation_matrix = rl.Matrix.translate(
+            @as(f32, @floatFromInt(self.size.x)) * 0.5,
+            0.0,
+            @as(f32, @floatFromInt(self.size.y)) * 0.5,
+        );
+
+        self.model.?.transform = self.model.?.transform.multiply(translation_matrix);
     }
 
     fn genTerrainMesh(self: *WorldData) !rl.Mesh {
@@ -226,17 +237,7 @@ pub const WorldData = struct {
         return mesh;
     }
 
-    fn getHeight(self: *WorldData, x: usize, y: usize) f32 {
+    pub fn getHeight(self: *WorldData, x: usize, y: usize) f32 {
         return self.height_map[y * self.size.x + x];
-    }
-};
-
-pub const Player = struct {
-    nickname: []const u8,
-
-    pub fn init(nickname: []const u8) Player {
-        return .{
-            .nickname = nickname,
-        };
     }
 };

@@ -42,7 +42,7 @@ pub fn init(alloc: std.mem.Allocator, st: *const Settings, connect_message: Sock
     return self;
 }
 
-pub fn deinit(self: *Self) void {
+pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     self.game_data.deinit(self.alloc);
 
     self.running.store(false, .monotonic);
@@ -53,6 +53,7 @@ pub fn deinit(self: *Self) void {
     network.deinit();
 
     _ = self._gpa.deinit();
+    alloc.destroy(self);
 }
 
 fn listen(self: *Self) !void {
@@ -87,9 +88,7 @@ fn listen(self: *Self) !void {
                 const line = pending.items[start..pos];
                 if (line.len != 0) try self.handleMessage(line);
                 start = pos + 1;
-            } else {
-                break;
-            }
+            } else break;
         }
 
         // Remove processed bytes from buffer
@@ -103,29 +102,12 @@ fn listen(self: *Self) !void {
 }
 
 fn handleMessage(self: *Self, message: []const u8) !void {
-    std.debug.print("client received from server: {s}\n", .{message});
-
-    const message_parsed: std.json.Parsed(std.json.Value) = std.json.parseFromSlice(
+    const message_parsed: std.json.Parsed(std.json.Value) = try std.json.parseFromSlice(
         std.json.Value,
         self.alloc,
         message,
         .{},
-    ) catch |err| switch (err) {
-        error.UnexpectedEndOfInput, error.SyntaxError => {
-            if (!std.mem.containsAtLeast(u8, message, 1, "\"")) return;
-
-            var split = std.mem.splitAny(u8, message, "\"");
-            for (0..3) |_| _ = split.next(); // skip 3 substrings
-            const descriptor = split.next().?; // get descriptor of failed message
-            const resend_request = SocketPacket.ResendRequest.init(descriptor);
-            const resend_request_string = try std.json.Stringify.valueAlloc(self.alloc, resend_request, .{});
-            defer self.alloc.free(resend_request_string);
-
-            try self.send(resend_request_string);
-            return;
-        },
-        else => return err,
-    };
+    );
     defer message_parsed.deinit();
 
     const message_root = message_parsed.value;
@@ -137,20 +119,27 @@ fn handleMessage(self: *Self, message: []const u8) !void {
 
                 if (std.mem.eql(u8, key, "descriptor")) {
                     const descriptor = entry.value_ptr.*.string;
-                    std.debug.print("Client received message with descriptor {s}\n", .{descriptor});
 
+                    if (std.mem.eql(u8, descriptor, "player_state")) {
+                        const request_parsed = try std.json.parseFromValue(SocketPacket.Player, self.alloc, message_root, .{});
+                        defer request_parsed.deinit();
+
+                        const player = request_parsed.value.player;
+                        if (self.game_data.players.items.len <= @as(usize, player.id)) {
+                            try self.game_data.players.append(self.alloc, player);
+                        } else {
+                            self.game_data.players.items[@intCast(player.id)] = player;
+                        }
+                    }
                     if (std.mem.startsWith(u8, descriptor, "world_data_chunk-")) {
                         const request_parsed = try std.json.parseFromValue(SocketPacket.WorldDataChunk, self.alloc, message_root, .{});
                         defer request_parsed.deinit();
 
                         const world_data_chunk: SocketPacket.WorldDataChunk = request_parsed.value;
-                        if (self.game_data.world_data) |*world_data| {
-                            std.debug.print("Client: adding chunk\n", .{});
-                            world_data.addChunk(world_data_chunk);
-                        } else {
-                            std.debug.print("Client: Initializing world_data\n", .{});
+                        if (self.game_data.world_data) |*world_data|
+                            world_data.addChunk(world_data_chunk)
+                        else
                             self.game_data.world_data = try ClientGameData.WorldData.init(self.alloc, world_data_chunk);
-                        }
                     }
                 }
             }

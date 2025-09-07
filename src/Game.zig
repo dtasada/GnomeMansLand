@@ -19,7 +19,7 @@ _gpa: std.heap.GeneralPurposeAllocator(.{}),
 _settings_parsed: std.json.Parsed(Settings),
 alloc: std.mem.Allocator,
 settings: *const Settings,
-camera: rl.Camera3D,
+camera: ?rl.Camera3D,
 camera_mode: enum { first_person, isometric },
 light_shader: rl.Shader,
 lights: std.ArrayList(Light) = .empty,
@@ -90,13 +90,7 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
     self._settings_parsed = try parseConfig(self.alloc);
     self.settings = &self._settings_parsed.value;
 
-    self.camera = .{
-        .fovy = 100,
-        .position = rl.Vector3.one().scale(@floatFromInt(self.settings.world_generation.resolution[0])),
-        .projection = .orthographic,
-        .target = rl.Vector3.zero(),
-        .up = rl.Vector3.init(0, 1, 0),
-    };
+    self.camera = null;
 
     self.camera_mode = .isometric;
 
@@ -112,15 +106,8 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
 }
 
 pub fn deinit(self: *Self) void {
-    if (self.client) |c| {
-        c.deinit();
-        self.alloc.destroy(c);
-    }
-
-    if (self.server) |s| {
-        s.deinit();
-        self.alloc.destroy(s);
-    }
+    if (self.client) |c| c.deinit(self.alloc);
+    if (self.server) |s| s.deinit(self.alloc);
 
     self.lights.deinit(self.alloc);
     self.light_shader.unload();
@@ -130,39 +117,50 @@ pub fn deinit(self: *Self) void {
 
 fn handleKeys(self: *Self) !void {
     // pan the camera with middle mouse
-    if (rl.isMouseButtonDown(.middle)) {
-        const camDir = self.camera.target.subtract(self.camera.position).normalize();
-        const worldUp = Camera.getUp(&self.camera);
-        const camRight = camDir.crossProduct(worldUp).normalize();
-        const camUp = camRight.crossProduct(camDir);
+    if (self.camera) |*camera| {
+        if (rl.isMouseButtonDown(.middle)) {
+            const camDir = camera.target.subtract(camera.position).normalize();
+            const worldUp = Camera.getUp(camera);
+            const camRight = camDir.crossProduct(worldUp).normalize();
+            const camUp = camRight.crossProduct(camDir);
 
-        const delta = rl.getMouseDelta();
-        const move_vector = camRight
-            .scale(-delta.x).add(camUp
-                .scale(delta.y))
-            .scale(2.0 / 9.0) // magic ratio that works
-            .scale(self.camera.fovy / 200);
-        self.camera.position = self.camera.position.add(move_vector);
-        self.camera.target = self.camera.target.add(move_vector);
+            const delta = rl.getMouseDelta();
+            const move_vector = camRight
+                .scale(-delta.x)
+                .add(camUp.scale(delta.y))
+                .scale(2.0 / 9.0) // magic ratio that works
+                .scale(camera.fovy / 200);
+            camera.position = camera.position.add(move_vector);
+            camera.target = camera.target.add(move_vector);
+        }
+        //
+        // reset camera pan offset
+        if (rl.isKeyPressed(.z)) {
+            camera.position = .{ .x = 256, .y = 256, .z = 256 };
+            camera.target = .{ .x = 0, .y = 0, .z = 0 };
+        }
+
+        const m = 5;
+        camera.fovy = @max(@min(Camera.MAX_FOV, camera.fovy + -m * rl.getMouseWheelMove()), Camera.MIN_FOV);
+
+        // pan the camera
+        if (rl.isMouseButtonDown(.right)) {
+            centerMouse();
+            Camera.update(camera, .third_person);
+        } else if (!self.mouse_is_enabled) toggleMouse(&self.mouse_is_enabled);
+
+        if (rl.isMouseButtonPressed(.left)) {
+            if (self.client) |client| {
+                if (self.getMouseToWorld()) |pos| {
+                    const move_player = SocketPacket.MovePlayer.init(.init(pos.x, pos.z));
+                    const move_player_string = try std.json.Stringify.valueAlloc(self.alloc, move_player, .{});
+                    defer self.alloc.free(move_player_string);
+
+                    try client.send(move_player_string);
+                }
+            }
+        }
     }
-
-    // reset camera pan offset
-    if (rl.isKeyPressed(.z)) {
-        std.debug.print("asd\n", .{});
-        self.camera.position = rl.Vector3{ .x = 256, .y = 256, .z = 256 };
-        self.camera.target = rl.Vector3{ .x = 0, .y = 0, .z = 0 };
-    }
-
-    const m = 5;
-    self.camera.fovy = @max(@min(Camera.MAX_FOV, self.camera.fovy + -m * rl.getMouseWheelMove()), Camera.MIN_FOV);
-
-    // pan the camera
-    if (rl.isMouseButtonDown(.right)) {
-        // if (self.mouse_is_enabled) toggleMouse(&self.mouse_is_enabled);
-
-        centerMouse();
-        Camera.update(&self.camera, .third_person);
-    } else if (!self.mouse_is_enabled) toggleMouse(&self.mouse_is_enabled);
 
     // debug light intensity
     if (rl.isKeyPressed(.minus)) {
@@ -174,42 +172,31 @@ fn handleKeys(self: *Self) !void {
         for (self.lights.items) |*l|
             l.intensity += 0.1;
     }
-
-    // client-server ping
-    if (rl.isKeyPressed(.space))
-        try self.client.?.send("ping!");
 }
 
 fn drawUi(self: *Self) void {
-    rl.drawText(rl.textFormat("Camera x: %.1f, y: %.1f, z: %.1f", .{
-        self.camera.position.x,
-        self.camera.position.y,
-        self.camera.position.z,
-    }), 12, 12, 24, .white);
+    if (self.camera) |camera| {
+        rl.drawText(rl.textFormat("Camera x: %.1f, y: %.1f, z: %.1f", .{
+            camera.position.x,
+            camera.position.y,
+            camera.position.z,
+        }), 12, 12, 24, .white);
+    }
 
-    rl.drawText(rl.textFormat("Mouse x: %d, y: %d", .{
+    rl.drawText(rl.textFormat("Mouse 2D x: %d, y: %d", .{
         rl.getMouseX(),
         rl.getMouseY(),
     }), 12, 32, 24, .white);
 
     rl.drawText(rl.textFormat("FPS: %d", .{rl.getFPS()}), 12, 52, 24, .white);
 
-    // const layers = [_][:0]const u8{
-    //     "water",
-    //     "sand",
-    //     "grass",
-    //     "mountain",
-    //     "snow",
-    // };
-    // rg.setStyle(.default, .{ .default = .text_size }, 24);
-    // inline for (0..5) |i| {
-    //     const rect = rl.Rectangle.init(140, 100 + @as(f32, @floatFromInt(i)) * 30, 200, 20);
-    //     // const up = commons.upper(self.alloc, layers[i]) catch "";
-    //     // defer self.alloc.free(up);
-    //     const up = layers[i];
-    //     _ = rg.slider(rect, up, "asd", &@field(WorldGen.TileData, layers[i]), 0, 1);
-    // }
-    // _ = rg.slider({.x_f})
+    if (self.getMouseToWorld()) |mouse_to_world| {
+        rl.drawText(rl.textFormat("Mouse in world x: %f, y: %f, z: %f", .{
+            mouse_to_world.x,
+            mouse_to_world.y,
+            mouse_to_world.z,
+        }), 12, 72, 24, .white);
+    }
 }
 
 var nickname_storage: [32]u8 = .{0} ** 32; // zero-initialized
@@ -249,6 +236,7 @@ fn drawLobby(self: *Self) !void {
             self.settings,
             SocketPacket.ClientConnect.init(nickname_trimmed.first()),
         );
+
         self.state = .game;
     }
 
@@ -276,6 +264,21 @@ fn drawLobby(self: *Self) !void {
     rl.endDrawing();
 }
 
+fn getMouseToWorld(self: *Self) ?rl.Vector3 {
+    if (self.camera) |camera| {
+        if (self.client) |client| {
+            if (client.game_data.world_data) |world_data| {
+                if (world_data.model) |model| {
+                    const mouse_pos_ray = rl.getScreenToWorldRay(rl.getMousePosition(), camera);
+                    const mouse_world_collision = rl.getRayCollisionMesh(mouse_pos_ray, model.meshes[0], model.transform);
+                    return mouse_world_collision.point;
+                }
+            }
+        }
+    }
+    return null;
+}
+
 pub fn loop(self: *Self) !void {
     while (!rl.windowShouldClose()) {
         switch (self.state) {
@@ -284,13 +287,14 @@ pub fn loop(self: *Self) !void {
                 // update step
                 try self.handleKeys();
 
-                Light.updateLights(&self.camera, self.light_shader, self.lights);
+                if (self.camera) |*camera|
+                    Light.updateLights(camera, self.light_shader, self.lights);
 
                 // render step
                 rl.beginDrawing();
                 rl.clearBackground(.black);
 
-                self.camera.begin();
+                if (self.camera) |c| c.begin();
 
                 // draw lights and models
                 self.light_shader.activate();
@@ -298,18 +302,57 @@ pub fn loop(self: *Self) !void {
                 for (self.lights.items) |l| rl.drawSphere(l.position, 10, l.color);
 
                 rl.gl.rlDisableBackfaceCulling();
-                if (self.client.?.game_data.world_data) |*world_data| {
-                    if (world_data.model) |model| {
-                        rl.drawModel(model, rl.Vector3.zero(), 1.0, .white);
-                    } else {
-                        try world_data.genModel(self.settings, self.light_shader);
+
+                if (self.client) |client| {
+                    if (client.game_data.world_data) |*world_data| {
+                        if (self.camera == null) {
+                            std.debug.print("setting camera...\n", .{});
+                            self.camera = .{
+                                .fovy = 100,
+                                .position = rl.Vector3.init(
+                                    @as(f32, @floatFromInt(world_data.size.x)) + @as(f32, @floatFromInt(world_data.size.x)) * 0.5,
+                                    @as(f32, @floatFromInt(world_data.size.x)) + @as(f32, @floatFromInt(world_data.size.x)) * 0.5,
+                                    @as(f32, @floatFromInt(world_data.size.x)) + @as(f32, @floatFromInt(world_data.size.y)) * 0.5,
+                                ),
+                                .projection = .orthographic,
+                                .target = rl.Vector3.init(
+                                    @as(f32, @floatFromInt(world_data.size.x)) * 0.5,
+                                    0.0,
+                                    @as(f32, @floatFromInt(world_data.size.y)) * 0.5,
+                                ),
+                                .up = rl.Vector3.init(0, 1, 0),
+                            };
+                        }
+
+                        for (client.game_data.players.items) |player| {
+                            if (player.position) |pos| {
+                                rl.drawCube(rl.Vector3.init(
+                                    pos.x,
+                                    world_data.getHeight(@intFromFloat(pos.x), @intFromFloat(pos.y)),
+                                    pos.y,
+                                ), 8, 50, 8, .red);
+                            }
+                        }
+
+                        if (world_data.model) |model| {
+                            rl.drawModel(model, rl.Vector3.init(
+                                0,
+                                0,
+                                0,
+                                // @as(f32, @floatFromInt(world_data.size.x)) * 0.5,
+                                // 0.0,
+                                // @as(f32, @floatFromInt(world_data.size.y)) * 0.5,
+                            ), 1.0, .white);
+                        } else if (world_data.isComplete())
+                            try world_data.genModel(self.settings, self.light_shader);
                     }
                 }
+
                 rl.gl.rlEnableBackfaceCulling();
 
                 self.light_shader.deactivate();
 
-                self.camera.end();
+                if (self.camera) |c| c.end();
 
                 self.drawUi();
 

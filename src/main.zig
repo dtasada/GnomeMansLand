@@ -34,7 +34,6 @@ pub fn main() !void {
 
     // Create game object
     var game = try Game.init(alloc);
-
     defer alloc.destroy(game);
     defer game.deinit();
 

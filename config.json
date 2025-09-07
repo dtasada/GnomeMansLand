@@ -17,6 +17,6 @@
 		"frequency": 0.25
 	},
 	"server": {
-		"port": 2000
+		"max_players": 8
 	}
 }
