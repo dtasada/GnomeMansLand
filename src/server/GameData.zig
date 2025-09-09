@@ -1,9 +1,10 @@
 //! Namespace for game data used by both the client and server
 const std = @import("std");
 
+const commons = @import("../commons.zig");
+
 const Perlin = @import("Perlin.zig");
 const ServerSettings = @import("Settings.zig");
-const commons = @import("../commons.zig");
 
 const Self = @This();
 

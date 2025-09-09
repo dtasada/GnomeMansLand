@@ -4,15 +4,16 @@ const std = @import("std");
 const rg = @import("raygui");
 const rl = @import("raylib");
 
-const Ui = @import("Ui.zig");
-const Camera = @import("rcamera.zig");
+const Server = @import("../server/Server.zig");
 const Client = @import("Client.zig");
 const GameData = @import("GameData.zig");
 const Light = @import("Light.zig");
-const Server = @import("../server/Server.zig");
 const Settings = @import("Settings.zig");
-const SocketPacket = @import("../SocketPacket.zig");
+
 const commons = @import("../commons.zig");
+const socket_packet = @import("../socket_packet.zig");
+const rcamera = @import("rcamera.zig");
+const ui = @import("ui.zig");
 
 const Self = @This();
 
@@ -127,7 +128,7 @@ fn handleKeys(self: *Self) !void {
     if (self.camera) |*camera| {
         if (rl.isMouseButtonDown(.middle)) {
             const camDir = camera.target.subtract(camera.position).normalize();
-            const worldUp = Camera.getUp(camera);
+            const worldUp = rcamera.getUp(camera);
             const camRight = camDir.crossProduct(worldUp).normalize();
             const camUp = camRight.crossProduct(camDir);
 
@@ -148,18 +149,18 @@ fn handleKeys(self: *Self) !void {
         }
 
         const m = 5;
-        camera.fovy = @max(@min(Camera.MAX_FOV, camera.fovy + -m * rl.getMouseWheelMove()), Camera.MIN_FOV);
+        camera.fovy = @max(@min(rcamera.MAX_FOV, camera.fovy + -m * rl.getMouseWheelMove()), rcamera.MIN_FOV);
 
         // pan the camera
         if (rl.isMouseButtonDown(.right)) {
             centerMouse();
-            Camera.update(camera, .third_person);
+            rcamera.update(camera, .third_person);
         } else if (!self.mouse_is_enabled) toggleMouse(&self.mouse_is_enabled);
 
         if (rl.isMouseButtonPressed(.left)) {
             if (self.client) |client| {
                 if (self.getMouseToWorld()) |pos| {
-                    const move_player = SocketPacket.MovePlayer.init(.init(pos.x, pos.z));
+                    const move_player = socket_packet.MovePlayer.init(.init(pos.x, pos.z));
                     const move_player_string = try std.json.Stringify.valueAlloc(self.alloc, move_player, .{});
                     defer self.alloc.free(move_player_string);
 
@@ -213,7 +214,7 @@ fn drawLobby(self: *Self) !void {
     rl.beginDrawing();
     rl.clearBackground(.black);
 
-    var buttons = try Ui.ButtonSet.initGeneric(
+    var buttons = try ui.ButtonSet.initGeneric(
         self.alloc,
         .{ .top_left_x = 24, .top_left_y = 128 },
         &[_][]const u8{ "Host server", "Connect to server" },
@@ -225,7 +226,7 @@ fn drawLobby(self: *Self) !void {
         .{ setClient, .{self} },
     });
 
-    const title_text = try Ui.Text.init(.{
+    const title_text = try ui.Text.init(.{
         .body = "Gnome Man's Land",
         .font_size = .title,
         .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0,
@@ -235,7 +236,7 @@ fn drawLobby(self: *Self) !void {
 
     title_text.update();
 
-    var nickname_input = try Ui.TextBox.init(self.alloc, .{
+    var nickname_input = try ui.TextBox.init(self.alloc, .{
         .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0,
         .y = 200,
     });
@@ -255,7 +256,7 @@ fn setClient(self: *Self) !void {
         if (self.client == null) self.client = Client.init(
             self.alloc,
             self.settings,
-            SocketPacket.ClientConnect.init(nickname_trimmed.first()),
+            socket_packet.ClientConnect.init(nickname_trimmed.first()),
         ) catch null;
 
         if (self.client) |_| self.state = .game;

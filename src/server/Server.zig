@@ -3,10 +3,11 @@ const std = @import("std");
 const builtin = @import("builtin");
 const network = @import("network");
 
+const socket_packet = @import("../socket_packet.zig");
+
 const ServerGameData = @import("GameData.zig");
 const Settings = @import("../client/Settings.zig");
 const ServerSettings = @import("Settings.zig");
-const SocketPacket = @import("../SocketPacket.zig");
 
 const Self = @This();
 var polling_rate: u64 = undefined;
@@ -21,7 +22,7 @@ game_data: ServerGameData,
 settings: ServerSettings,
 
 socket_packets: struct {
-    world_data_chunks: []SocketPacket.WorldDataChunk,
+    world_data_chunks: []socket_packet.WorldDataChunk,
 },
 
 const Client = struct {
@@ -95,7 +96,7 @@ fn handleClientSend(self: *Self, client: *Client) !void {
     loop: while (self.running.load(.monotonic) and client.open.load(.monotonic)) : (std.Thread.sleep(polling_rate * std.time.ns_per_ms)) {
         // send necessary game info
         for (self.game_data.players.items) |p| {
-            const player_packet = SocketPacket.Player.init(p);
+            const player_packet = socket_packet.Player.init(p);
             const player_string = try std.json.Stringify.valueAlloc(self.alloc, player_packet, .{});
             defer self.alloc.free(player_string);
             client.send(self.alloc, player_string) catch |err| switch (err) {
@@ -124,7 +125,7 @@ fn handleMessage(self: *Self, client: *Client, message: []u8) !void {
                     std.debug.print("Server received message with descriptor {s}\n", .{descriptor});
                     if (std.mem.eql(u8, descriptor, "client_connect")) {
                         const request_parsed = try std.json.parseFromValue(
-                            SocketPacket.ClientConnect,
+                            socket_packet.ClientConnect,
                             self.alloc,
                             message_root,
                             .{},
@@ -142,14 +143,14 @@ fn handleMessage(self: *Self, client: *Client, message: []u8) !void {
                         }
                     } else if (std.mem.eql(u8, descriptor, "resend_request")) {
                         const request_parsed = try std.json.parseFromValue(
-                            SocketPacket.ResendRequest,
+                            socket_packet.ResendRequest,
                             self.alloc,
                             message_root,
                             .{},
                         );
                         defer request_parsed.deinit();
 
-                        const resend_request: SocketPacket.ResendRequest = request_parsed.value;
+                        const resend_request: socket_packet.ResendRequest = request_parsed.value;
                         if (std.mem.startsWith(u8, resend_request.body, "world_data_chunk-")) {
                             var split = std.mem.splitAny(u8, resend_request.body, "-");
                             split.index = 1;
@@ -163,7 +164,7 @@ fn handleMessage(self: *Self, client: *Client, message: []u8) !void {
                             try client.send(self.alloc, world_data_string);
                         }
                     } else if (std.mem.eql(u8, descriptor, "move_player")) {
-                        const request_parsed = try std.json.parseFromValue(SocketPacket.MovePlayer, self.alloc, message_root, .{});
+                        const request_parsed = try std.json.parseFromValue(socket_packet.MovePlayer, self.alloc, message_root, .{});
                         defer request_parsed.deinit();
                         std.debug.print("received move_player: {s}\n", .{message});
 
@@ -187,7 +188,7 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     errdefer self.game_data.deinit(self.alloc);
 
     self.socket_packets = .{
-        .world_data_chunks = try SocketPacket.WorldDataChunk.init(self.alloc, self.game_data.world_data),
+        .world_data_chunks = try socket_packet.WorldDataChunk.init(self.alloc, self.game_data.world_data),
     };
 
     polling_rate = self.settings.polling_rate;
@@ -264,7 +265,7 @@ fn listen(self: *Self) !void {
     }
 }
 
-fn appendPlayer(self: *Self, connect_request: SocketPacket.ClientConnect) !void {
+fn appendPlayer(self: *Self, connect_request: socket_packet.ClientConnect) !void {
     self.game_data.players.appendAssumeCapacity(ServerGameData.Player.init(
         @intCast(self.game_data.players.items.len),
         try self.alloc.dupe(u8, connect_request.nickname), // duplicate nickname bc threads

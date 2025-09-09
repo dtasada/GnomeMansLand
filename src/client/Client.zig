@@ -3,9 +3,10 @@ const std = @import("std");
 const builtin = @import("builtin");
 const network = @import("network");
 
+const socket_packet = @import("../socket_packet.zig");
+
 const GameData = @import("GameData.zig");
 const Settings = @import("Settings.zig");
-const SocketPacket = @import("../SocketPacket.zig");
 
 const Self = @This();
 
@@ -17,7 +18,7 @@ game_data: GameData,
 running: std.atomic.Value(bool),
 polling_rate: u64,
 
-pub fn init(alloc: std.mem.Allocator, settings: Settings, connect_message: SocketPacket.ClientConnect) !*Self {
+pub fn init(alloc: std.mem.Allocator, settings: Settings, connect_message: socket_packet.ClientConnect) !*Self {
     var self: *Self = try alloc.create(Self);
     errdefer alloc.destroy(self);
 
@@ -137,7 +138,7 @@ fn handleMessage(self: *Self, message: []const u8) !void {
                     const descriptor = entry.value_ptr.*.string;
 
                     if (std.mem.eql(u8, descriptor, "player_state")) {
-                        const request_parsed = try std.json.parseFromValue(SocketPacket.Player, self.alloc, message_root, .{});
+                        const request_parsed = try std.json.parseFromValue(socket_packet.Player, self.alloc, message_root, .{});
                         defer request_parsed.deinit();
 
                         const player = request_parsed.value.player;
@@ -148,10 +149,10 @@ fn handleMessage(self: *Self, message: []const u8) !void {
                         }
                     }
                     if (std.mem.startsWith(u8, descriptor, "world_data_chunk-")) {
-                        const request_parsed = try std.json.parseFromValue(SocketPacket.WorldDataChunk, self.alloc, message_root, .{});
+                        const request_parsed = try std.json.parseFromValue(socket_packet.WorldDataChunk, self.alloc, message_root, .{});
                         defer request_parsed.deinit();
 
-                        const world_data_chunk: SocketPacket.WorldDataChunk = request_parsed.value;
+                        const world_data_chunk: socket_packet.WorldDataChunk = request_parsed.value;
                         if (self.game_data.world_data) |*world_data|
                             world_data.addChunk(world_data_chunk)
                         else

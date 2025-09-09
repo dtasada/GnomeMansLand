@@ -6,9 +6,10 @@ const c = @cImport({
     @cInclude("stdlib.h");
 });
 
-const SocketPacket = @import("../SocketPacket.zig");
+const socket_packet = @import("../socket_packet.zig");
+
 const Settings = @import("Settings.zig");
-pub const Player = @import("../server/GameData.zig").Player;
+const Player = @import("../server/GameData.zig").Player;
 
 const GameData = @This();
 
@@ -86,7 +87,7 @@ pub const WorldData = struct {
         pub var snow: f32 = 1.0;
     };
 
-    pub fn init(alloc: std.mem.Allocator, first_packet: SocketPacket.WorldDataChunk) !WorldData {
+    pub fn init(alloc: std.mem.Allocator, first_packet: socket_packet.WorldDataChunk) !WorldData {
         var self = WorldData{
             .size = first_packet.total_size,
             .height_map = try alloc.alloc(f32, first_packet.total_size.x * first_packet.total_size.y),
@@ -98,7 +99,7 @@ pub const WorldData = struct {
         return self;
     }
 
-    pub fn addChunk(self: *WorldData, world_data_chunk: SocketPacket.WorldDataChunk) void {
+    pub fn addChunk(self: *WorldData, world_data_chunk: socket_packet.WorldDataChunk) void {
         @memcpy(self.height_map[world_data_chunk.float_start_index..world_data_chunk.float_end_index], world_data_chunk.height_map);
         self._height_map_filled += world_data_chunk.height_map.len;
     }
