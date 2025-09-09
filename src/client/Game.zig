@@ -4,21 +4,22 @@ const std = @import("std");
 const rg = @import("raygui");
 const rl = @import("raylib");
 
+const Ui = @import("Ui.zig");
 const Camera = @import("rcamera.zig");
 const Client = @import("Client.zig");
-const ClientGameData = @import("ClientGameData.zig");
-const commons = @import("commons.zig");
+const GameData = @import("GameData.zig");
 const Light = @import("Light.zig");
-const Server = @import("Server.zig");
+const Server = @import("../server/Server.zig");
 const Settings = @import("Settings.zig");
-const SocketPacket = @import("SocketPacket.zig");
+const SocketPacket = @import("../SocketPacket.zig");
+const commons = @import("../commons.zig");
 
 const Self = @This();
 
 _gpa: std.heap.GeneralPurposeAllocator(.{}),
 _settings_parsed: std.json.Parsed(Settings),
 alloc: std.mem.Allocator,
-settings: *const Settings,
+settings: Settings,
 camera: ?rl.Camera3D,
 camera_mode: enum { first_person, isometric },
 light_shader: rl.Shader,
@@ -66,7 +67,7 @@ fn setupLights(self: *Self) !void {
     self.lights = try std.ArrayList(Light).initCapacity(self.alloc, 32);
     try self.lights.append(self.alloc, Light.init(
         .point,
-        rl.Vector3.init(200, 200, 200),
+        rl.Vector3.init(200, 200, 0),
         rl.Vector3.zero(),
         .white,
         1,
@@ -75,26 +76,30 @@ fn setupLights(self: *Self) !void {
 }
 
 fn parseConfig(alloc: std.mem.Allocator) !std.json.Parsed(Settings) {
-    const file = try std.fs.cwd().readFileAlloc(alloc, "./config.json", 4096);
+    const file = try std.fs.cwd().readFileAlloc(alloc, "./settings.json", 4096);
     defer alloc.free(file);
 
-    return try std.json.parseFromSlice(Settings, alloc, file, .{});
+    return std.json.parseFromSlice(Settings, alloc, file, .{});
 }
 
 pub fn init(alloc: std.mem.Allocator) !*Self {
     var self: *Self = try alloc.create(Self);
+    errdefer alloc.destroy(self);
 
     self._gpa = .init;
     self.alloc = self._gpa.allocator();
 
     self._settings_parsed = try parseConfig(self.alloc);
-    self.settings = &self._settings_parsed.value;
+    errdefer self._settings_parsed.deinit();
+
+    self.settings = self._settings_parsed.value;
 
     self.camera = null;
 
     self.camera_mode = .isometric;
 
     try self.setupLights();
+    errdefer self.lights.deinit(self.alloc);
 
     self.mouse_is_enabled = true;
     self.state = .lobby;
@@ -105,7 +110,7 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
     return self;
 }
 
-pub fn deinit(self: *Self) void {
+pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     if (self.client) |c| c.deinit(self.alloc);
     if (self.server) |s| s.deinit(self.alloc);
 
@@ -113,6 +118,8 @@ pub fn deinit(self: *Self) void {
     self.light_shader.unload();
     self._settings_parsed.deinit();
     _ = self._gpa.deinit();
+
+    alloc.destroy(self);
 }
 
 fn handleKeys(self: *Self) !void {
@@ -206,62 +213,53 @@ fn drawLobby(self: *Self) !void {
     rl.beginDrawing();
     rl.clearBackground(.black);
 
-    const button_width = 256.0;
-    const button_height = 72.0;
-    const button_padding = 16.0;
-    const center_x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0;
-    const center_y = @as(f32, @floatFromInt(rl.getScreenHeight())) / 2.0;
-    const server_button_rect = rl.Rectangle.init(
-        center_x - button_width / 2.0,
-        center_y - button_height - button_padding,
-        button_width,
-        button_height,
+    var buttons = try Ui.ButtonSet.initGeneric(
+        self.alloc,
+        .{ .top_left_x = 24, .top_left_y = 128 },
+        &[_][]const u8{ "Host server", "Connect to server" },
     );
+    defer buttons.deinit(self.alloc);
 
-    rg.setStyle(.default, .{ .default = .text_size }, 24);
-    if (rg.button(server_button_rect, "Host server")) {
-        if (self.server == null) self.server = try Server.init(self.alloc, self.settings);
-    }
+    try buttons.update(.{
+        .{ setServer, .{self} },
+        .{ setClient, .{self} },
+    });
 
-    const client_button_rect = rl.Rectangle.init(
-        center_x - button_width / 2.0,
-        center_y,
-        button_width,
-        button_height,
-    );
-    if (rg.button(client_button_rect, "Connect to server") and nickname[0] != 0) { // only if nickname isn't empty
+    const title_text = try Ui.Text.init(.{
+        .body = "Gnome Man's Land",
+        .font_size = .title,
+        .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0,
+        .y = 100.0,
+        .anchor = .center,
+    });
+
+    title_text.update();
+
+    var nickname_input = try Ui.TextBox.init(self.alloc, .{
+        .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0,
+        .y = 200,
+    });
+    defer nickname_input.deinit(self.alloc);
+    try nickname_input.update();
+
+    rl.endDrawing();
+}
+
+fn setServer(self: *Self) !void {
+    if (self.server == null) self.server = try Server.init(self.alloc, self.settings.server);
+}
+
+fn setClient(self: *Self) !void {
+    if (nickname[0] != 0) { // only if nickname isn't empty
         var nickname_trimmed = std.mem.splitAny(u8, nickname, "\x00");
-        if (self.client == null) self.client = try Client.init(
+        if (self.client == null) self.client = Client.init(
             self.alloc,
             self.settings,
             SocketPacket.ClientConnect.init(nickname_trimmed.first()),
-        );
+        ) catch null;
 
-        self.state = .game;
+        if (self.client) |_| self.state = .game;
     }
-
-    rg.setStyle(.default, .{ .default = .text_size }, 10);
-
-    rl.drawText(
-        "Gnome Man's Land",
-        @as(i32, @intFromFloat(center_x)) - 220,
-        @as(i32, @intFromFloat(server_button_rect.y)) - 128,
-        48,
-        .white,
-    );
-
-    const name_box_width = 192.0;
-    const name_box_height = 48.0;
-    const name_box_rect = rl.Rectangle.init(
-        center_x - name_box_width / 2.0,
-        client_button_rect.y + client_button_rect.height + 24,
-        name_box_width,
-        name_box_height,
-    );
-
-    _ = rg.textBox(name_box_rect, nickname, nickname_storage.len, true);
-
-    rl.endDrawing();
 }
 
 fn getMouseToWorld(self: *Self) ?rl.Vector3 {
@@ -292,7 +290,7 @@ pub fn loop(self: *Self) !void {
 
                 // render step
                 rl.beginDrawing();
-                rl.clearBackground(.black);
+                rl.clearBackground(.sky_blue);
 
                 if (self.camera) |c| c.begin();
 
@@ -335,14 +333,7 @@ pub fn loop(self: *Self) !void {
                         }
 
                         if (world_data.model) |model| {
-                            rl.drawModel(model, rl.Vector3.init(
-                                0,
-                                0,
-                                0,
-                                // @as(f32, @floatFromInt(world_data.size.x)) * 0.5,
-                                // 0.0,
-                                // @as(f32, @floatFromInt(world_data.size.y)) * 0.5,
-                            ), 1.0, .white);
+                            rl.drawModel(model, rl.Vector3.init(0, 0, 0), 1.0, .white);
                         } else if (world_data.isComplete())
                             try world_data.genModel(self.settings, self.light_shader);
                     }

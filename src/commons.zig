@@ -1,5 +1,9 @@
 const std = @import("std");
 
+pub inline fn getCString(text: []const u8) [:0]const u8 {
+    return @ptrCast(text.ptr[0..text.len :0]);
+}
+
 pub fn v2(T: type) type {
     return struct {
         const Self = @This();

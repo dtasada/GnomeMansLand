@@ -2,8 +2,7 @@
 
 const rl = @import("raylib");
 const std = @import("std");
-const rg = @import("raygui");
-const Game = @import("Game.zig");
+const Game = @import("Client/Game.zig");
 
 /// Set up Raylib window and corresponding settings
 fn setupRaylib() void {
@@ -33,9 +32,19 @@ pub fn main() !void {
     const alloc = gpa.allocator();
 
     // Create game object
-    var game = try Game.init(alloc);
-    defer alloc.destroy(game);
-    defer game.deinit();
+    var game = Game.init(alloc) catch |err| switch (err) {
+        error.UnexpectedToken => {
+            std.debug.print("Error parsing `settings.json`. Please check JSON syntax.\n", .{});
+            return;
+        },
+        error.UnknownField => {
+            std.debug.print("Error parsing `settings.json`. Please check that the configuration is in the expected structure\n", .{});
+            return;
+        },
+        else => return err,
+    };
+
+    defer game.deinit(alloc);
 
     // Main game loop here
     try game.loop();

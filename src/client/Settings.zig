@@ -1,25 +1,18 @@
 //! Container for game configuration pulled from config.json
 const std = @import("std");
-const ServerSettings = @import("ServerSettings.zig");
+const ServerSettings = @import("../server/Settings.zig");
 
 video: struct {
     resolution: [2]i32,
     framerate: i32,
 },
+
 multiplayer: struct {
     server_host: []u8,
     server_port: u16,
-    server_polling_interval: u64, // in milliseconds
+    polling_rate: u64, // in milliseconds
 },
-world_generation: struct {
-    resolution: [2]u32,
-    seed: ?u32 = null,
-    octaves: i32,
-    persistence: f32,
-    lacunarity: f32,
-    frequency: f32,
-    amplitude: f32,
-},
+
 server: ServerSettings,
 
 pub fn print(self: *const @This()) void {
@@ -30,7 +23,7 @@ pub fn print(self: *const @This()) void {
     std.debug.print("multiplayer: struct {{\n", .{});
     std.debug.print("    server_host: {s},\n", .{self.multiplayer.server_host});
     std.debug.print("    server_port: {d},\n", .{self.multiplayer.server_port});
-    std.debug.print("    server_polling_interval: {d},\n", .{self.multiplayer.server_polling_interval});
+    std.debug.print("    server_polling_interval: {d},\n", .{self.multiplayer.polling_rate});
     std.debug.print("}},\n", .{});
     std.debug.print("world_generation: struct {{\n", .{});
     std.debug.print("    resolution: {d}, {d},\n", .{ self.world_generation.resolution[0], self.world_generation.resolution[1] });

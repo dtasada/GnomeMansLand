@@ -3,9 +3,9 @@ const std = @import("std");
 const builtin = @import("builtin");
 const network = @import("network");
 
-const ClientGameData = @import("ClientGameData.zig");
+const GameData = @import("GameData.zig");
 const Settings = @import("Settings.zig");
-const SocketPacket = @import("SocketPacket.zig");
+const SocketPacket = @import("../SocketPacket.zig");
 
 const Self = @This();
 
@@ -13,20 +13,36 @@ _gpa: std.heap.GeneralPurposeAllocator(.{}),
 alloc: std.mem.Allocator,
 sock: network.Socket,
 listen_thread: std.Thread,
-game_data: ClientGameData,
+game_data: GameData,
 running: std.atomic.Value(bool),
 polling_rate: u64,
 
-pub fn init(alloc: std.mem.Allocator, st: *const Settings, connect_message: SocketPacket.ClientConnect) !*Self {
+pub fn init(alloc: std.mem.Allocator, settings: Settings, connect_message: SocketPacket.ClientConnect) !*Self {
     var self: *Self = try alloc.create(Self);
+    errdefer alloc.destroy(self);
 
     self._gpa = .init;
     self.alloc = self._gpa.allocator();
+    errdefer _ = self._gpa.deinit();
 
-    self.game_data = try ClientGameData.init(self.alloc);
+    self.game_data = try GameData.init(self.alloc);
+    errdefer self.game_data.deinit(self.alloc);
 
     try network.init();
-    self.sock = try network.connectToHost(self.alloc, st.multiplayer.server_host, st.multiplayer.server_port, .tcp);
+    errdefer network.deinit();
+
+    self.sock = network.connectToHost(
+        self.alloc,
+        settings.multiplayer.server_host,
+        settings.multiplayer.server_port,
+        .tcp,
+    ) catch |err| {
+        std.debug.print(
+            "Couldn't connect to host server at ({s}:{}): {}\n",
+            .{ settings.multiplayer.server_host, settings.multiplayer.server_port, err },
+        );
+        return err;
+    };
 
     self.running = std.atomic.Value(bool).init(true);
 
@@ -35,7 +51,7 @@ pub fn init(alloc: std.mem.Allocator, st: *const Settings, connect_message: Sock
     _ = try self.sock.send(connect_message_json);
 
     self.listen_thread = try std.Thread.spawn(.{}, Self.listen, .{self});
-    self.polling_rate = st.multiplayer.server_polling_interval;
+    self.polling_rate = settings.multiplayer.polling_rate;
 
     try self.sock.setReadTimeout(500 * 1000); // set 500 ms timeout for thread join
 
@@ -139,7 +155,7 @@ fn handleMessage(self: *Self, message: []const u8) !void {
                         if (self.game_data.world_data) |*world_data|
                             world_data.addChunk(world_data_chunk)
                         else
-                            self.game_data.world_data = try ClientGameData.WorldData.init(self.alloc, world_data_chunk);
+                            self.game_data.world_data = try GameData.WorldData.init(self.alloc, world_data_chunk);
                     }
                 }
             }

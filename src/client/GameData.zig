@@ -1,28 +1,28 @@
 //! Container for game data owned by the client
 const std = @import("std");
 const rl = @import("raylib");
-const commons = @import("commons.zig");
+const commons = @import("../commons.zig");
 const c = @cImport({
     @cInclude("stdlib.h");
 });
 
-const SocketPacket = @import("SocketPacket.zig");
+const SocketPacket = @import("../SocketPacket.zig");
 const Settings = @import("Settings.zig");
-pub const Player = @import("ServerGameData.zig").Player;
+pub const Player = @import("../server/GameData.zig").Player;
 
-const ClientGameData = @This();
+const GameData = @This();
 
 world_data: ?WorldData,
 players: std.ArrayList(Player),
 
-pub fn init(alloc: std.mem.Allocator) !ClientGameData {
+pub fn init(alloc: std.mem.Allocator) !GameData {
     return .{
         .world_data = null,
         .players = try std.ArrayList(Player).initCapacity(alloc, 1),
     };
 }
 
-pub fn deinit(self: *ClientGameData, alloc: std.mem.Allocator) void {
+pub fn deinit(self: *GameData, alloc: std.mem.Allocator) void {
     if (self.world_data) |*world_data|
         world_data.deinit(alloc);
 
@@ -87,15 +87,14 @@ pub const WorldData = struct {
     };
 
     pub fn init(alloc: std.mem.Allocator, first_packet: SocketPacket.WorldDataChunk) !WorldData {
-        var self: WorldData = undefined;
-
-        self.size = first_packet.total_size;
-        self.height_map = try alloc.alloc(f32, self.size.x * self.size.y);
-        self._height_map_filled = 0;
-        self.model = null;
+        var self = WorldData{
+            .size = first_packet.total_size,
+            .height_map = try alloc.alloc(f32, first_packet.total_size.x * first_packet.total_size.y),
+            ._height_map_filled = 0,
+            .model = null,
+        };
 
         self.addChunk(first_packet);
-
         return self;
     }
 
@@ -115,7 +114,7 @@ pub const WorldData = struct {
         if (self.model) |m| rl.unloadModel(m);
     }
 
-    pub fn genModel(self: *WorldData, st: *const Settings, light_shader: rl.Shader) !void {
+    pub fn genModel(self: *WorldData, settings: Settings, light_shader: rl.Shader) !void {
         self.model = try rl.Model.fromMesh(try self.genTerrainMesh());
         var image = rl.Image.genColor(
             @intCast(self.size.x),
@@ -125,7 +124,7 @@ pub const WorldData = struct {
 
         for (0..self.size.y) |y| {
             for (0..self.size.x) |x| {
-                const height = (self.getHeight(x, y) + st.world_generation.amplitude) / (2 * st.world_generation.amplitude);
+                const height = (self.getHeight(x, y) + settings.server.world_generation.amplitude) / (2 * settings.server.world_generation.amplitude);
                 const tile: Rgb =
                     if (height <= TileData.water)
                         Color.WATER_LOW.lerp(Color.WATER_HIGH, height / TileData.water)
@@ -138,16 +137,12 @@ pub const WorldData = struct {
                     else
                         Rgb.init(240, 240, 240);
 
-                image.drawPixel(
-                    @intCast(x),
-                    @intCast(y),
-                    .{
-                        .r = @intCast(tile.r),
-                        .g = @intCast(tile.g),
-                        .b = @intCast(tile.b),
-                        .a = 255,
-                    },
-                );
+                image.drawPixel(@intCast(x), @intCast(y), .{
+                    .r = @intCast(tile.r),
+                    .g = @intCast(tile.g),
+                    .b = @intCast(tile.b),
+                    .a = 255,
+                });
             }
         }
         const tex = try rl.Texture.fromImage(image); // do not deinit the texture lol
@@ -226,10 +221,33 @@ pub const WorldData = struct {
             }
         }
 
-        for (0..vertex_count) |i| {
-            mesh.normals[i * 3 + 0] = 0.0;
-            mesh.normals[i * 3 + 1] = 1.0;
-            mesh.normals[i * 3 + 2] = 0.0;
+        for (0..height) |y| {
+            for (0..width) |x| {
+                const index = y * width + x;
+
+                // Get neighboring heights for gradient calculation
+                const x_prev = if (x > 0) x - 1 else x;
+                const x_next = if (x < width - 1) x + 1 else x;
+                const y_prev = if (y > 0) y - 1 else y;
+                const y_next = if (y < height - 1) y + 1 else y;
+
+                const height_left = self.getHeight(x_prev, y);
+                const height_right = self.getHeight(x_next, y);
+                const height_up = self.getHeight(x, y_prev);
+                const height_down = self.getHeight(x, y_next);
+
+                // Calculate gradients using finite differences
+                const dx = (height_right - height_left) / 2.0;
+                const dy = (height_down - height_up) / 2.0;
+
+                // Normal vector is (-dx, 1, -dy) normalized
+                const normal_vec = rl.Vector3{ .x = -dx, .y = 1.0, .z = -dy };
+                const normal = normal_vec.normalize();
+
+                mesh.normals[index * 3 + 0] = normal.x;
+                mesh.normals[index * 3 + 1] = normal.y;
+                mesh.normals[index * 3 + 2] = normal.z;
+            }
         }
 
         rl.uploadMesh(&mesh, false);

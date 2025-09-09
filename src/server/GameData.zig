@@ -2,9 +2,8 @@
 const std = @import("std");
 
 const Perlin = @import("Perlin.zig");
-const Settings = @import("Settings.zig");
-const ServerSettings = @import("ServerSettings.zig");
-const commons = @import("commons.zig");
+const ServerSettings = @import("Settings.zig");
+const commons = @import("../commons.zig");
 
 const Self = @This();
 
@@ -12,11 +11,14 @@ world_data: WorldData,
 players: std.ArrayList(Player),
 server_settings: ServerSettings,
 
-pub fn init(alloc: std.mem.Allocator, st: *const Settings) !Self {
+pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !Self {
+    var players = try std.ArrayList(Player).initCapacity(alloc, settings.max_players);
+    errdefer players.deinit(alloc);
+
     return .{
-        .players = try std.ArrayList(Player).initCapacity(alloc, st.server.max_players),
-        .world_data = try .init(alloc, st),
-        .server_settings = st.server,
+        .players = players,
+        .world_data = try WorldData.init(alloc, settings),
+        .server_settings = settings,
     };
 }
 
@@ -47,14 +49,16 @@ pub const WorldData = struct {
     height_map: []f32, // 2d in practice
     size: commons.v2u,
 
-    pub fn init(alloc: std.mem.Allocator, st: *const Settings) !WorldData {
-        var self: WorldData = undefined;
-        self.size = .{ .x = st.world_generation.resolution[0], .y = st.world_generation.resolution[1] };
-        self.height_map = try alloc.alloc(f32, self.size.x * self.size.y);
+    pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !WorldData {
+        const x, const y = settings.world_generation.resolution;
+        var self: WorldData = .{
+            .size = .{ .x = x, .y = y },
+            .height_map = try alloc.alloc(f32, x * y),
+        };
+        errdefer alloc.free(self.height_map);
 
-        try self.genTerrainData(alloc, st);
+        try self.genTerrainData(alloc, settings);
 
-        std.debug.print("World generated\n", .{});
         return self;
     }
 
@@ -62,8 +66,8 @@ pub const WorldData = struct {
         alloc.free(self.height_map);
     }
 
-    fn genTerrainData(self: *WorldData, alloc: std.mem.Allocator, st: *const Settings) !void {
-        const seed: u32 = st.world_generation.seed orelse rand: {
+    fn genTerrainData(self: *WorldData, alloc: std.mem.Allocator, settings: ServerSettings) !void {
+        const seed: u32 = settings.world_generation.seed orelse rand: {
             var seed: u32 = undefined;
             try std.posix.getrandom(std.mem.asBytes(&seed));
             var rand = std.Random.DefaultPrng.init(seed);
@@ -75,22 +79,22 @@ pub const WorldData = struct {
 
         for (0..self.size.y) |y| {
             for (0..self.size.x) |x| {
-                var freq = 7.68 * st.world_generation.frequency / @as(f32, @floatFromInt(self.size.x));
+                var freq = 7.68 * settings.world_generation.frequency / @as(f32, @floatFromInt(self.size.x));
                 var height: f32 = 0.0;
-                var amp: f32 = st.world_generation.amplitude;
+                var amp: f32 = settings.world_generation.amplitude;
                 var maxValue: f32 = 0.0;
 
                 var nx: f32 = 0;
                 var ny: f32 = 0;
 
-                for (0..@intCast(st.world_generation.octaves)) |_| {
+                for (0..@intCast(settings.world_generation.octaves)) |_| {
                     nx = @as(f32, @floatFromInt(x)) * freq;
                     ny = @as(f32, @floatFromInt(y)) * freq;
 
                     height += amp * pn.noise(nx, ny, 0);
                     maxValue += amp;
-                    amp *= st.world_generation.persistence;
-                    freq *= st.world_generation.lacunarity;
+                    amp *= settings.world_generation.persistence;
+                    freq *= settings.world_generation.lacunarity;
                 }
 
                 self.height_map[y * self.size.x + x] = height;

@@ -9,14 +9,6 @@
             .url = "git+https://github.com/raylib-zig/raylib-zig?ref=devel#df70c5c952f61f84a39cd2af5649f5ad7a645b6f",
             .hash = "raylib_zig-5.6.0-dev-KE8REH9ABQBo9v5YfUwPYdgihp7NNFOr_2FJOiVJH7bH",
         },
-        .toml = .{
-            .url = "git+https://github.com/sam701/zig-toml?ref=zig-0.15#6f291d608e39c1ae22ead9a93199d933329ff77b",
-            .hash = "toml-0.3.0-bV14BaN6AQCB2xK3BdZJxb7s5cMYTlnPwfWt2RO-U6mr",
-        },
-        .pretty = .{
-            .url = "https://github.com/timfayz/pretty/archive/refs/heads/main.tar.gz",
-            .hash = "pretty-0.10.4-Tm65r5pKAQDdxCFNtL6huo7lHc_HWn6v4VO5WaTufpRQ",
-        },
         .network = .{
             .url = "https://github.com/MasterQ32/zig-network/archive/92cd82679d0fc065cbbdb6c446b9e561a75a44a6.tar.gz",
             .hash = "network-0.1.0-Pm-AgmUxAQD-rOaM_3wMkaxea1PBKda1Hn6F82Nw1F3u",

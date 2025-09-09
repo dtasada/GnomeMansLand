@@ -1,6 +1,6 @@
 //! Namespace for JSON request types
 const std = @import("std");
-const ServerGameData = @import("ServerGameData.zig");
+const ServerGameData = @import("server/GameData.zig");
 const commons = @import("commons.zig");
 
 pub const ClientConnect = struct {
@@ -32,7 +32,6 @@ pub const WorldDataChunk = struct {
         const total_floats = server_world_data.height_map.len;
         const amount_of_chunks = @divFloor(total_floats, floats_per_chunk) +
             (if (total_floats % floats_per_chunk == 0) @as(u32, 0) else @as(u32, 1));
-        std.debug.print("amount_of_chunks {}\n", .{amount_of_chunks});
 
         var chunks = try alloc.alloc(WorldDataChunk, amount_of_chunks);
 
