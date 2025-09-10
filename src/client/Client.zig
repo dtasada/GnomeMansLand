@@ -3,6 +3,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const network = @import("network");
 
+const commons = @import("../commons.zig");
 const socket_packet = @import("../socket_packet.zig");
 
 const GameData = @import("GameData.zig");
@@ -38,9 +39,10 @@ pub fn init(alloc: std.mem.Allocator, settings: Settings, connect_message: socke
         settings.multiplayer.server_port,
         .tcp,
     ) catch |err| {
-        std.debug.print(
+        commons.print(
             "Couldn't connect to host server at ({s}:{}): {}\n",
             .{ settings.multiplayer.server_host, settings.multiplayer.server_port, err },
+            .red,
         );
         return err;
     };
@@ -85,11 +87,11 @@ fn listen(self: *Self) !void {
             error.WouldBlock => continue,
             error.ConnectionResetByPeer => {
                 self.running.store(false, .monotonic);
-                std.debug.print("Socket disconnected\n", .{});
+                commons.print("Socket disconnected\n", .{}, .blue);
                 return;
             },
             else => {
-                std.debug.print("Couldn't read from socket: {}\n", .{err});
+                commons.print("Couldn't read from socket: {}\n", .{err}, .red);
                 return err;
             },
         };

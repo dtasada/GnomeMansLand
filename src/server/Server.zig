@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 const network = @import("network");
 
 const socket_packet = @import("../socket_packet.zig");
+const commons = @import("../commons.zig");
 
 const ServerGameData = @import("GameData.zig");
 const Settings = @import("../client/Settings.zig");
@@ -72,11 +73,11 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
         const bytes_read = client.sock.receive(buf) catch |err| switch (err) {
             error.WouldBlock => continue,
             error.ConnectionResetByPeer => {
-                std.debug.print("Socket disconnected\n", .{});
+                commons.print("Socket disconnected\n", .{}, .blue);
                 return;
             },
             else => {
-                std.debug.print("Couldn't read from socket: {}\n", .{err});
+                commons.print("Couldn't read from socket: {}\n", .{err}, .red);
                 return err;
             },
         };
@@ -90,7 +91,7 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
     }
 
     _ = self.clients.orderedRemove(client.id);
-    std.debug.print("Client disconnected.\n", .{});
+    commons.print("Client disconnected.\n", .{}, .blue);
 }
 
 fn handleClientSend(self: *Self, client: *Client) !void {
@@ -123,7 +124,7 @@ fn handleMessage(self: *Self, client: *Client, message: []u8) !void {
                 if (std.mem.eql(u8, key, "descriptor")) {
                     const descriptor = entry.value_ptr.*.string;
 
-                    std.debug.print("Server received message with descriptor {s}\n", .{descriptor});
+                    commons.print("Server received message with descriptor {s}\n", .{descriptor}, .blue);
                     if (std.mem.eql(u8, descriptor, "client_connect")) {
                         const request_parsed = try std.json.parseFromValue(
                             socket_packet.ClientConnect,
@@ -156,7 +157,6 @@ fn handleMessage(self: *Self, client: *Client, message: []u8) !void {
                             var split = std.mem.splitAny(u8, resend_request.body, "-");
                             split.index = 1;
                             const chunk_index = try std.fmt.parseInt(u32, split.next().?, 10);
-                            std.debug.print("chunk index: {}\n", .{chunk_index});
 
                             const chunk = self.socket_packets.world_data_chunks[chunk_index];
                             const world_data_string = try std.json.Stringify.valueAlloc(self.alloc, chunk, .{});
@@ -167,7 +167,6 @@ fn handleMessage(self: *Self, client: *Client, message: []u8) !void {
                     } else if (std.mem.eql(u8, descriptor, "move_player")) {
                         const request_parsed = try std.json.parseFromValue(socket_packet.MovePlayer, self.alloc, message_root, .{});
                         defer request_parsed.deinit();
-                        std.debug.print("received move_player: {s}\n", .{message});
 
                         self.game_data.players.items[client.id].position = request_parsed.value.new_pos;
                     }
@@ -244,6 +243,8 @@ fn listen(self: *Self) !void {
     while (self.running.load(.monotonic)) {
         if (self.sock.accept()) |sock| {
             var client: *Client = try self.alloc.create(Client);
+            errdefer self.alloc.destroy(client);
+
             client.* = .{
                 .sock = sock,
                 .thread_handle_receive = try std.Thread.spawn(.{}, handleClientReceive, .{ self, client }),
@@ -254,12 +255,12 @@ fn listen(self: *Self) !void {
 
             try self.clients.append(self.alloc, client);
 
-            std.debug.print("Client connected from {f}.\n", .{try client.sock.getLocalEndPoint()});
+            commons.print("Client connected from {f}.\n", .{try client.sock.getLocalEndPoint()}, .blue);
         } else |err| switch (err) {
             error.WouldBlock => {},
             error.ConnectionAborted => {},
             else => {
-                std.debug.print("Server socket closed, shutting down...\n", .{});
+                commons.print("Server socket closed, shutting down...\n", .{}, .blue);
                 break;
             },
         }

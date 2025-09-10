@@ -25,6 +25,7 @@ pub const Button = struct {
     padding_x: f32,
     padding_y: f32,
     hitbox: rl.Rectangle,
+    hover_anim_bar_width: f32,
 
     pub fn init(settings: struct {
         text: []const u8,
@@ -37,43 +38,62 @@ pub const Button = struct {
         text_spacing: f32 = 2.0,
         text_color: rl.Color = .white,
     }) !Button {
-        const text = try Text.init(.{
-            .body = settings.text,
-            .x = settings.x,
-            .y = settings.y,
-            .font_size = settings.font_size,
-            .font = settings.font orelse chalk_font,
-            .spacing = settings.text_spacing,
-            .color = settings.text_color,
-            .anchor = .topleft,
-        });
-        const text_dimensions = rl.measureTextEx(
-            text.font,
-            commons.getCString(text.body),
-            @floatFromInt(@intFromEnum(text.font_size)),
-            text.spacing,
-        );
-
-        return .{
-            .text = text,
+        var self = Button{
+            .text = try Text.init(.{
+                .body = settings.text,
+                .x = settings.x,
+                .y = settings.y,
+                .font_size = settings.font_size,
+                .font = settings.font orelse chalk_font,
+                .spacing = settings.text_spacing,
+                .color = settings.text_color,
+                .anchor = .topleft,
+            }),
             .padding_x = settings.padding_x,
             .padding_y = settings.padding_y,
-            .hitbox = rl.Rectangle.init(
-                text.x - settings.padding_x,
-                text.y - settings.padding_y,
-                text_dimensions.x + settings.padding_x * 2.0,
-                text_dimensions.y + settings.padding_y * 2.0,
-            ),
+            .hitbox = undefined,
+            .hover_anim_bar_width = 0.0,
         };
+        self.hitbox = self.getHitbox();
+
+        return self;
+    }
+
+    pub fn getHitbox(self: *Button) rl.Rectangle {
+        const text_dimensions = rl.measureTextEx(
+            self.text.font,
+            commons.getCString(self.text.body),
+            @floatFromInt(@intFromEnum(self.text.font_size)),
+            self.text.spacing,
+        );
+
+        return rl.Rectangle.init(
+            self.text.x - self.padding_x,
+            self.text.y - self.padding_y,
+            text_dimensions.x + self.padding_x * 2.0,
+            text_dimensions.y + self.padding_y * 2.0,
+        );
     }
 
     pub fn update(self: *Button, action: anytype, args: anytype) !void {
-        rl.drawRectangleRec(self.hitbox, .red);
-
         self.text.update();
 
-        if (rl.checkCollisionPointRec(rl.getMousePosition(), self.hitbox) and rl.isMouseButtonPressed(.left)) {
-            try @call(.auto, action, args);
+        // draw underlines
+        rl.drawRectangleRec(.init(self.hitbox.x, self.hitbox.y + self.hitbox.height - 12.0, self.hitbox.width, 2.0), .gray);
+        rl.drawRectangleRec(.init(self.hitbox.x, self.hitbox.y + self.hitbox.height - 12.0, self.hover_anim_bar_width, 2.0), .light_gray);
+
+        if (rl.checkCollisionPointRec(rl.getMousePosition(), self.hitbox)) {
+            // increase hover animation bar length
+            self.hover_anim_bar_width = @min(self.hover_anim_bar_width + 4.0, self.hitbox.width * 0.67);
+
+            if (rl.isMouseButtonPressed(.left))
+                switch (@typeInfo(@typeInfo(@TypeOf(action)).@"fn".return_type.?)) {
+                    .error_union => try @call(.auto, action, args),
+                    else => @call(.auto, action, args),
+                };
+        } else {
+            // increase hover animation bar length
+            self.hover_anim_bar_width = @max(self.hover_anim_bar_width - 4.0, 0.0);
         }
     }
 };
@@ -114,7 +134,7 @@ pub const ButtonSet = struct {
                 .x = settings.top_left_x,
                 .y = if (i == 0) // if the first one, just base it on topleft
                     settings.top_left_y
-                else // othewise, base it on location of the last one.
+                else // otherwise, base it on location of the last one.
                     self.buttons[i - 1].text.y + self.buttons[i - 1].hitbox.height + settings.padding_between_buttons,
                 .font = settings.font,
                 .font_size = settings.font_size,
@@ -133,6 +153,10 @@ pub const ButtonSet = struct {
 
     pub fn update(self: *ButtonSet, actions_and_args: anytype) !void {
         const fields = std.meta.fields(@TypeOf(actions_and_args));
+        if (fields.len != self.buttons.len) {
+            commons.print("Amount of tuples passed to ButtonSet.update must equal amount of buttons passed in ButtonSet.init\n", .{}, .red);
+            return error.ButtonSetNotMatching;
+        }
 
         inline for (fields, 0..) |field, i| {
             const button_actions_and_args = @field(actions_and_args, field.name);
@@ -169,29 +193,31 @@ fn Text_(M: bool) type {
             color: rl.Color = .white,
             anchor: Anchor = .topleft,
         }) !Text_(M) {
-            const font = settings.font orelse chalk_font;
-            const dimensions = rl.measureTextEx(
-                font,
-                commons.getCString(settings.body),
-                @floatFromInt(@intFromEnum(settings.font_size)),
-                settings.spacing,
-            );
-            return .{
+            var self = Text_(M){
                 .body = settings.body,
                 .x = settings.x,
                 .y = settings.y,
-                .font = font,
+                .font = settings.font orelse chalk_font,
                 .font_size = settings.font_size,
                 .spacing = settings.spacing,
                 .color = settings.color,
                 .anchor = settings.anchor,
-                .hitbox = rl.Rectangle.init(
-                    settings.x,
-                    settings.y,
-                    dimensions.x,
-                    dimensions.y,
-                ),
+                .hitbox = undefined,
             };
+            self.hitbox = self.getHitbox();
+
+            return self;
+        }
+
+        /// Returns hitbox for text. Optionally pass in a text length
+        fn getHitbox(self: *Text_(M)) rl.Rectangle {
+            const dimensions = rl.measureTextEx(
+                self.font,
+                commons.getCString(self.body),
+                @floatFromInt(@intFromEnum(self.font_size)),
+                self.spacing,
+            );
+            return rl.Rectangle.init(self.x, self.y, dimensions.x, @floatFromInt(@intFromEnum(self.font_size)));
         }
 
         /// Draws text on the screen.
@@ -221,6 +247,9 @@ fn Text_(M: bool) type {
 pub const TextBox = struct {
     content: TextVariable,
     len: usize,
+    last_backspaced: ?i64,
+    backspace_fast: bool,
+    anim_bar_len: f32,
 
     pub fn init(alloc: std.mem.Allocator, settings: struct {
         x: f32,
@@ -237,13 +266,16 @@ pub const TextBox = struct {
                 .x = settings.x,
                 .y = settings.y,
                 .body = "",
-                .font = settings.font,
+                .font = settings.font orelse chalk_font,
                 .font_size = settings.font_size,
                 .spacing = settings.spacing,
                 .color = settings.color,
                 .anchor = settings.anchor,
             }),
             .len = settings.default_body.len,
+            .last_backspaced = null,
+            .backspace_fast = false,
+            .anim_bar_len = 0.0,
         };
 
         self.content.body = try alloc.alloc(u8, 64);
@@ -257,17 +289,65 @@ pub const TextBox = struct {
     }
 
     pub fn update(self: *TextBox) !void {
-        if (rl.isKeyPressed(.backspace) and self.len > 0) {
-            self.len -= 1;
+        const min_length = 96.0;
+        const base_bar_len = @max(min_length, self.content.hitbox.width);
+
+        // draw base underline
+        rl.drawRectangleRec(
+            .init(
+                self.content.hitbox.x,
+                self.content.hitbox.y + self.content.hitbox.height - 12.0,
+                base_bar_len,
+                2.0,
+            ),
+            .gray,
+        );
+
+        // draw anime underline
+        self.anim_bar_len = if (self.anim_bar_len + 1 < self.content.hitbox.width)
+            self.anim_bar_len + 1.0
+        else
+            @max(self.anim_bar_len - 1.0, 0.0);
+        rl.drawRectangleRec(
+            .init(
+                self.content.hitbox.x,
+                self.content.hitbox.y + self.content.hitbox.height - 12.0,
+                self.anim_bar_len,
+                2.0,
+            ),
+            .light_gray,
+        );
+
+        if (rl.isKeyDown(.backspace) and self.len > 0) {
+            if (self.last_backspaced) |t| {
+                // backspace only if it's been half a second or it's been 50 ms since last delete
+                const now = std.time.milliTimestamp();
+                if (now - t > 500 or self.backspace_fast and now - t > 50) {
+                    self.last_backspaced = now;
+                    self.len -= 1;
+                    self.backspace_fast = true;
+                }
+            } else {
+                self.last_backspaced = std.time.milliTimestamp();
+                self.len -= 1;
+            }
         } else {
-            const key = rl.getCharPressed();
-            if (key != 0 and self.len < self.content.body.len) {
-                self.content.body[self.len] = @intCast(key);
-                self.len += 1;
+            // when releasing backspace, reset last_backspaced and back_space fast
+            self.backspace_fast = false;
+            self.last_backspaced = null;
+
+            var key = rl.getCharPressed(); // get char pressed
+            while (key != 0) { // loop until all chars have been processed
+                if (self.len < self.content.body.len - 1) {
+                    self.content.body[self.len] = @intCast(key); // set last character to key
+                    self.len += 1; // increase len
+                }
+                key = rl.getCharPressed(); // get next char
             }
         }
+        self.content.hitbox = self.content.getHitbox(); // draw underline for length of buffer
 
-        self.content.body[self.len] = 0;
+        self.content.body[self.len] = 0; // set last char to '\0' so its readable as a cstring
         self.content.drawBuffer(self.content.body[0..self.len]);
     }
 };

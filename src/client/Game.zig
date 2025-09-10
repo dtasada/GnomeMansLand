@@ -9,7 +9,8 @@ const Client = @import("Client.zig");
 const GameData = @import("GameData.zig");
 const Light = @import("Light.zig");
 const Settings = @import("Settings.zig");
-const Lobby = @import("Lobby.zig");
+const Lobby = @import("states/Lobby.zig");
+const LobbySettings = @import("states/LobbySettings.zig");
 
 const commons = @import("../commons.zig");
 const socket_packet = @import("../socket_packet.zig");
@@ -27,10 +28,11 @@ camera_mode: enum { first_person, isometric },
 light_shader: rl.Shader,
 lights: std.ArrayList(Light) = .empty,
 mouse_is_enabled: bool,
-state: enum { lobby, game },
+state: enum { lobby, game, lobby_settings, game_setup, server_setup },
 client: ?*Client,
 server: ?*Server,
 lobby: Lobby,
+lobby_settings: LobbySettings,
 
 // additional camera attributes
 pan_sensitivity: f32 = 0.1,
@@ -78,7 +80,7 @@ fn setupLights(self: *Self) !void {
     ));
 }
 
-fn parseConfig(alloc: std.mem.Allocator) !std.json.Parsed(Settings) {
+fn parseSettings(alloc: std.mem.Allocator) !std.json.Parsed(Settings) {
     const file = try std.fs.cwd().readFileAlloc(alloc, "./settings.json", 4096);
     defer alloc.free(file);
 
@@ -92,10 +94,14 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
     self._gpa = .init;
     self.alloc = self._gpa.allocator();
 
-    self._settings_parsed = try parseConfig(self.alloc);
+    self._settings_parsed = try parseSettings(self.alloc);
     errdefer self._settings_parsed.deinit();
 
     self.settings = self._settings_parsed.value;
+    if (self.settings.server.world_generation.resolution[0] * self.settings.server.world_generation.resolution[1] > 256 * 256) {
+        commons.print("Error in settings: world_generation resolution cannot be greater than 256x256\n", .{}, .red);
+        return error.WorldGenTooLarge;
+    }
 
     self.camera = null;
 
@@ -110,13 +116,21 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
     self.client = null;
     self.server = null;
 
+    ui.chalk_font = try rl.loadFontEx("resources/fonts/chalk.ttf", 256, null);
+    ui.gwathlyn_font = try rl.loadFontEx("resources/fonts/gwathlyn.ttf", 256, null);
+
     self.lobby = try Lobby.init(self.alloc);
+    self.lobby_settings = try LobbySettings.init(self.alloc);
 
     return self;
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+    ui.chalk_font.unload();
+    ui.gwathlyn_font.unload();
+
     self.lobby.deinit(self.alloc);
+    self.lobby_settings.deinit(self.alloc);
 
     if (self.client) |c| c.deinit(self.alloc);
     if (self.server) |s| s.deinit(self.alloc);
@@ -232,6 +246,7 @@ pub fn loop(self: *Self) !void {
     while (!rl.windowShouldClose()) {
         switch (self.state) {
             .lobby => try self.lobby.update(self),
+            .lobby_settings => try self.lobby_settings.update(self),
             .game => {
                 // update step
                 try self.handleKeys();
@@ -255,7 +270,6 @@ pub fn loop(self: *Self) !void {
                 if (self.client) |client| {
                     if (client.game_data.world_data) |*world_data| {
                         if (self.camera == null) {
-                            std.debug.print("setting camera...\n", .{});
                             self.camera = .{
                                 .fovy = 100,
                                 .position = rl.Vector3.init(

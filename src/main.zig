@@ -2,6 +2,9 @@
 
 const rl = @import("raylib");
 const std = @import("std");
+
+const commons = @import("commons.zig");
+
 const Game = @import("Client/Game.zig");
 
 /// Set up Raylib window and corresponding settings
@@ -34,11 +37,11 @@ pub fn main() !void {
     // Create game object
     var game = Game.init(alloc) catch |err| switch (err) {
         error.UnexpectedToken => {
-            std.debug.print("Error parsing `settings.json`. Please check JSON syntax.\n", .{});
+            commons.print("Error parsing `settings.json`. Please check JSON syntax.\n", .{}, .red);
             return;
         },
         error.UnknownField => {
-            std.debug.print("Error parsing `settings.json`. Please check that the configuration is in the expected structure\n", .{});
+            commons.print("Error parsing `settings.json`. Please check that the configuration is in the expected structure\n", .{}, .red);
             return;
         },
         else => return err,

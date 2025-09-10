@@ -26,3 +26,18 @@ pub fn upper(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     }
     return out;
 }
+
+pub fn print(
+    comptime text: []const u8,
+    args: anytype,
+    color: enum { white, red, green, blue },
+) void {
+    switch (color) {
+        .white => {},
+        .red => std.debug.print("\x1b[0;31m", .{}),
+        .green => std.debug.print("\x1b[0;34m", .{}),
+        .blue => std.debug.print("\x1b[0;34m", .{}),
+    }
+    std.debug.print(text, args);
+    std.debug.print("\x1b[0m", .{});
+}
