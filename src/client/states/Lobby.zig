@@ -58,7 +58,7 @@ fn setClient(self: *Self, game: *Game) !void {
             socket_packet.ClientConnect.init(self.nickname_input.content.body),
         ) catch null;
 
-        if (game.client) |_| game.state = .game;
+        if (game.client) |_| game.state = .client_setup;
     }
 }
 

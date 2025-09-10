@@ -1,5 +1,6 @@
 const rl = @import("raylib");
 const std = @import("std");
+
 const commons = @import("../commons.zig");
 
 const FontSize = enum(i32) {
@@ -244,9 +245,15 @@ fn Text_(M: bool) type {
 }
 
 /// Allocates 64 bytes. Don't forget to deinit
+pub const BoxLabel = struct {
+    label: []const u8,
+    max_len: usize, // input size excluding sentinel
+};
 pub const TextBox = struct {
     content: TextVariable,
     len: usize,
+    max_len: usize,
+    focused: bool,
     last_backspaced: ?i64,
     backspace_fast: bool,
     anim_bar_len: f32,
@@ -260,6 +267,7 @@ pub const TextBox = struct {
         spacing: f32 = 2.0,
         color: rl.Color = .white,
         anchor: Anchor = .topleft,
+        max_len: usize = 64,
     }) !TextBox {
         var self = TextBox{
             .content = try TextVariable.init(.{
@@ -273,12 +281,14 @@ pub const TextBox = struct {
                 .anchor = settings.anchor,
             }),
             .len = settings.default_body.len,
+            .max_len = settings.max_len,
+            .focused = false,
             .last_backspaced = null,
             .backspace_fast = false,
             .anim_bar_len = 0.0,
         };
 
-        self.content.body = try alloc.alloc(u8, 64);
+        self.content.body = try alloc.alloc(u8, settings.max_len + 1);
         @memset(self.content.body, 0);
         @memcpy(self.content.body[0..settings.default_body.len], settings.default_body);
         return self;
@@ -318,36 +328,135 @@ pub const TextBox = struct {
             .light_gray,
         );
 
-        if (rl.isKeyDown(.backspace) and self.len > 0) {
-            if (self.last_backspaced) |t| {
-                // backspace only if it's been half a second or it's been 50 ms since last delete
-                const now = std.time.milliTimestamp();
-                if (now - t > 500 or self.backspace_fast and now - t > 50) {
-                    self.last_backspaced = now;
+        if (rl.isMouseButtonPressed(.left)) {
+            var shadow_hitbox = self.content.getHitbox();
+            shadow_hitbox.width = shadow_hitbox.height * @as(f32, @floatFromInt(self.max_len));
+            self.focused = rl.checkCollisionPointRec(rl.getMousePosition(), shadow_hitbox);
+        }
+
+        if (self.focused)
+            if (rl.isKeyDown(.backspace) and self.len > 0) {
+                if (self.last_backspaced) |t| {
+                    // backspace only if it's been half a second or it's been 50 ms since last delete
+                    const now = std.time.milliTimestamp();
+                    if (now - t > 500 or self.backspace_fast and now - t > 50) {
+                        self.last_backspaced = now;
+                        self.len -= 1;
+                        self.backspace_fast = true;
+                    }
+                } else {
+                    self.last_backspaced = std.time.milliTimestamp();
                     self.len -= 1;
-                    self.backspace_fast = true;
                 }
             } else {
-                self.last_backspaced = std.time.milliTimestamp();
-                self.len -= 1;
-            }
-        } else {
-            // when releasing backspace, reset last_backspaced and back_space fast
-            self.backspace_fast = false;
-            self.last_backspaced = null;
+                // when releasing backspace, reset last_backspaced and back_space fast
+                self.backspace_fast = false;
+                self.last_backspaced = null;
 
-            var key = rl.getCharPressed(); // get char pressed
-            while (key != 0) { // loop until all chars have been processed
-                if (self.len < self.content.body.len - 1) {
-                    self.content.body[self.len] = @intCast(key); // set last character to key
-                    self.len += 1; // increase len
+                var key = rl.getCharPressed(); // get char pressed
+                while (key != 0) { // loop until all chars have been processed
+                    if (self.len < self.content.body.len - 1) {
+                        self.content.body[self.len] = @intCast(key); // set last character to key
+                        self.len += 1; // increase len
+                    }
+                    key = rl.getCharPressed(); // get next char
                 }
-                key = rl.getCharPressed(); // get next char
-            }
-        }
+            };
+
         self.content.hitbox = self.content.getHitbox(); // draw underline for length of buffer
 
         self.content.body[self.len] = 0; // set last char to '\0' so its readable as a cstring
         self.content.drawBuffer(self.content.body[0..self.len]);
+    }
+};
+
+pub const TextBoxSet = struct {
+    boxes: []TextBox,
+    labels: []Text,
+
+    pub fn initSpecific(alloc: std.mem.Allocator, boxes: []TextBox) !TextBoxSet {
+        const self = TextBoxSet{ .boxes = try alloc.alloc(TextBox, boxes.len) };
+
+        @memcpy(self.boxes, boxes);
+
+        return self;
+    }
+
+    pub fn initGeneric(
+        alloc: std.mem.Allocator,
+        settings: struct {
+            top_left_x: f32,
+            top_left_y: f32,
+            font: ?rl.Font = null,
+            font_size: FontSize = .body,
+            padding_x: f32 = 4.0,
+            padding_y: f32 = 4.0,
+            text_spacing: f32 = 2.0,
+            text_color: rl.Color = .white,
+            padding_between_boxes: f32 = 4.0,
+        },
+        labels: []const BoxLabel,
+    ) !TextBoxSet {
+        const self = TextBoxSet{
+            .boxes = try alloc.alloc(TextBox, labels.len),
+            .labels = try alloc.alloc(Text, labels.len),
+        };
+        errdefer alloc.free(self.boxes);
+        errdefer alloc.free(self.labels);
+
+        var longest_label_x: f32 = 0.0;
+        for (labels, 0..) |label, i| {
+            self.labels[i] = try Text.init(.{
+                .body = label.label,
+                .x = settings.top_left_x,
+                .y = if (i == 0) // if the first one, just base it on topleft
+                    settings.top_left_y
+                else // otherwise, base it on location of the last one.
+                    self.labels[i - 1].y + self.labels[i - 1].hitbox.height + settings.padding_between_boxes,
+                .font_size = settings.font_size,
+                .font = settings.font orelse chalk_font,
+                .color = settings.text_color,
+            });
+            longest_label_x = @max(longest_label_x, self.labels[i].hitbox.width);
+        }
+
+        for (self.labels, 0..) |label, i| {
+            self.boxes[i] = try TextBox.init(alloc, .{
+                .x = label.x + longest_label_x,
+                .y = label.y,
+                .font = settings.font,
+                .font_size = settings.font_size,
+                .max_len = labels[i].max_len,
+            });
+        }
+
+        return self;
+    }
+
+    pub fn deinit(self: *TextBoxSet, alloc: std.mem.Allocator) void {
+        for (self.boxes) |*text_box|
+            text_box.deinit(alloc);
+
+        alloc.free(self.boxes);
+        alloc.free(self.labels);
+    }
+
+    /// Pass in references to strings. Writes sentinel at the end.
+    pub fn update(self: *TextBoxSet, references: []const []u8) !void {
+        if (references.len != self.boxes.len) {
+            commons.print("Amount of references passed to TextBoxSet.update must equal amount of labels passed in TextBoxSet.init\n", .{}, .red);
+            return error.TextBoxSetNotMatching;
+        }
+
+        for (self.labels) |label| label.update();
+
+        for (references, 0..) |ref, i| {
+            try self.boxes[i].update();
+            const len = self.boxes[i].len;
+            if (len > 0 and ref.len > len) {
+                @memcpy(ref[0 .. len - 1], self.boxes[i].content.body[0 .. len - 1]);
+                ref[len - 1] = 0;
+            }
+        }
     }
 };

@@ -9,8 +9,7 @@ const Client = @import("Client.zig");
 const GameData = @import("GameData.zig");
 const Light = @import("Light.zig");
 const Settings = @import("Settings.zig");
-const Lobby = @import("states/Lobby.zig");
-const LobbySettings = @import("states/LobbySettings.zig");
+const states = @import("states/states.zig");
 
 const commons = @import("../commons.zig");
 const socket_packet = @import("../socket_packet.zig");
@@ -28,11 +27,14 @@ camera_mode: enum { first_person, isometric },
 light_shader: rl.Shader,
 lights: std.ArrayList(Light) = .empty,
 mouse_is_enabled: bool,
-state: enum { lobby, game, lobby_settings, game_setup, server_setup },
 client: ?*Client,
 server: ?*Server,
-lobby: Lobby,
-lobby_settings: LobbySettings,
+
+state: enum { lobby, game, lobby_settings, client_setup, server_setup },
+lobby: states.Lobby,
+lobby_settings: states.LobbySettings,
+client_setup: states.ClientSetup,
+server_setup: states.ServerSetup,
 
 // additional camera attributes
 pan_sensitivity: f32 = 0.1,
@@ -119,8 +121,10 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
     ui.chalk_font = try rl.loadFontEx("resources/fonts/chalk.ttf", 256, null);
     ui.gwathlyn_font = try rl.loadFontEx("resources/fonts/gwathlyn.ttf", 256, null);
 
-    self.lobby = try Lobby.init(self.alloc);
-    self.lobby_settings = try LobbySettings.init(self.alloc);
+    self.lobby = try states.Lobby.init(self.alloc);
+    self.lobby_settings = try states.LobbySettings.init(self.alloc);
+    self.client_setup = try states.ClientSetup.init(self.alloc);
+    self.server_setup = try states.ServerSetup.init(self.alloc);
 
     return self;
 }
@@ -129,6 +133,8 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     ui.chalk_font.unload();
     ui.gwathlyn_font.unload();
 
+    self.client_setup.deinit(self.alloc);
+    self.server_setup.deinit(self.alloc);
     self.lobby.deinit(self.alloc);
     self.lobby_settings.deinit(self.alloc);
 
@@ -247,6 +253,8 @@ pub fn loop(self: *Self) !void {
         switch (self.state) {
             .lobby => try self.lobby.update(self),
             .lobby_settings => try self.lobby_settings.update(self),
+            .client_setup => try self.client_setup.update(self),
+            .server_setup => try self.server_setup.update(self),
             .game => {
                 // update step
                 try self.handleKeys();
