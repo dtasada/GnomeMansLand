@@ -12,7 +12,7 @@ fn setupRaylib() void {
     rl.setConfigFlags(.{
         .window_highdpi = true,
         .vsync_hint = true,
-        .window_resizable = true,
+        .window_topmost = true,
         .msaa_4x_hint = true,
     });
 

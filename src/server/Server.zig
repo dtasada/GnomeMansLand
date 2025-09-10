@@ -59,10 +59,11 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
 
     try client.sock.setReadTimeout(500 * 1000);
 
-    var buf_: [64]u8 = undefined;
-    var writer = client.sock.writer(&buf_);
-    try writer.interface.writeAll("server: welcome to server!!!!!\n");
-    std.debug.print("buf_ (server.zig:64): {s}\n", .{buf_});
+    // idk why this was necessary but keeping it in just in case.
+    // var buf_: [64]u8 = undefined;
+    // var writer = client.sock.writer(&buf_);
+    // try writer.interface.writeAll("server: welcome to server!!!!!\n");
+    // std.debug.print("buf_ (server.zig:64): {s}\n", .{buf_});
 
     var buf: []u8 = try self.alloc.alloc(u8, 65535);
     defer self.alloc.free(buf);

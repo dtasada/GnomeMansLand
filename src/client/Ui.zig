@@ -3,8 +3,8 @@ const std = @import("std");
 const commons = @import("../commons.zig");
 
 const FontSize = enum(i32) {
-    title = 48,
-    body = 24,
+    title = 96,
+    body = 40,
 };
 
 const Anchor = enum {
@@ -14,6 +14,9 @@ const Anchor = enum {
 
 pub const Text = Text_(false);
 pub const TextVariable = Text_(true);
+
+pub var chalk_font: rl.Font = undefined;
+pub var gwathlyn_font: rl.Font = undefined;
 
 /// Button struct.
 pub const Button = struct {
@@ -39,7 +42,7 @@ pub const Button = struct {
             .x = settings.x,
             .y = settings.y,
             .font_size = settings.font_size,
-            .font = settings.font orelse try rl.getFontDefault(),
+            .font = settings.font orelse chalk_font,
             .spacing = settings.text_spacing,
             .color = settings.text_color,
             .anchor = .topleft,
@@ -166,7 +169,7 @@ fn Text_(M: bool) type {
             color: rl.Color = .white,
             anchor: Anchor = .topleft,
         }) !Text_(M) {
-            const font = settings.font orelse try rl.getFontDefault();
+            const font = settings.font orelse chalk_font;
             const dimensions = rl.measureTextEx(
                 font,
                 commons.getCString(settings.body),
@@ -254,12 +257,17 @@ pub const TextBox = struct {
     }
 
     pub fn update(self: *TextBox) !void {
-        const key = rl.getCharPressed();
-        if (key != 0 and self.len < self.content.body.len) {
-            self.content.body[self.len] = @intCast(key);
-            self.len += 1;
+        if (rl.isKeyPressed(.backspace) and self.len > 0) {
+            self.len -= 1;
+        } else {
+            const key = rl.getCharPressed();
+            if (key != 0 and self.len < self.content.body.len) {
+                self.content.body[self.len] = @intCast(key);
+                self.len += 1;
+            }
         }
 
+        self.content.body[self.len] = 0;
         self.content.drawBuffer(self.content.body[0..self.len]);
     }
 };

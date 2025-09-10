@@ -9,6 +9,7 @@ const Client = @import("Client.zig");
 const GameData = @import("GameData.zig");
 const Light = @import("Light.zig");
 const Settings = @import("Settings.zig");
+const Lobby = @import("Lobby.zig");
 
 const commons = @import("../commons.zig");
 const socket_packet = @import("../socket_packet.zig");
@@ -29,6 +30,7 @@ mouse_is_enabled: bool,
 state: enum { lobby, game },
 client: ?*Client,
 server: ?*Server,
+lobby: Lobby,
 
 // additional camera attributes
 pan_sensitivity: f32 = 0.1,
@@ -108,10 +110,14 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
     self.client = null;
     self.server = null;
 
+    self.lobby = try Lobby.init(self.alloc);
+
     return self;
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+    self.lobby.deinit(self.alloc);
+
     if (self.client) |c| c.deinit(self.alloc);
     if (self.server) |s| s.deinit(self.alloc);
 
@@ -207,62 +213,6 @@ fn drawUi(self: *Self) void {
     }
 }
 
-var nickname_storage: [32]u8 = .{0} ** 32; // zero-initialized
-const nickname: [:0]u8 = nickname_storage[0..31 :0]; // length 31, sentinel at index 31
-
-fn drawLobby(self: *Self) !void {
-    rl.beginDrawing();
-    rl.clearBackground(.black);
-
-    var buttons = try ui.ButtonSet.initGeneric(
-        self.alloc,
-        .{ .top_left_x = 24, .top_left_y = 128 },
-        &[_][]const u8{ "Host server", "Connect to server" },
-    );
-    defer buttons.deinit(self.alloc);
-
-    try buttons.update(.{
-        .{ setServer, .{self} },
-        .{ setClient, .{self} },
-    });
-
-    const title_text = try ui.Text.init(.{
-        .body = "Gnome Man's Land",
-        .font_size = .title,
-        .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0,
-        .y = 100.0,
-        .anchor = .center,
-    });
-
-    title_text.update();
-
-    var nickname_input = try ui.TextBox.init(self.alloc, .{
-        .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0,
-        .y = 200,
-    });
-    defer nickname_input.deinit(self.alloc);
-    try nickname_input.update();
-
-    rl.endDrawing();
-}
-
-fn setServer(self: *Self) !void {
-    if (self.server == null) self.server = try Server.init(self.alloc, self.settings.server);
-}
-
-fn setClient(self: *Self) !void {
-    if (nickname[0] != 0) { // only if nickname isn't empty
-        var nickname_trimmed = std.mem.splitAny(u8, nickname, "\x00");
-        if (self.client == null) self.client = Client.init(
-            self.alloc,
-            self.settings,
-            socket_packet.ClientConnect.init(nickname_trimmed.first()),
-        ) catch null;
-
-        if (self.client) |_| self.state = .game;
-    }
-}
-
 fn getMouseToWorld(self: *Self) ?rl.Vector3 {
     if (self.camera) |camera| {
         if (self.client) |client| {
@@ -281,7 +231,7 @@ fn getMouseToWorld(self: *Self) ?rl.Vector3 {
 pub fn loop(self: *Self) !void {
     while (!rl.windowShouldClose()) {
         switch (self.state) {
-            .lobby => try self.drawLobby(),
+            .lobby => try self.lobby.update(self),
             .game => {
                 // update step
                 try self.handleKeys();
