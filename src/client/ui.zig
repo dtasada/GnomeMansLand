@@ -251,7 +251,7 @@ pub const BoxLabel = struct {
     default_value: []const u8,
 };
 pub const TextBox = struct {
-    content: TextVariable,
+    inner_text: TextVariable,
     len: usize,
     max_len: usize,
     focused: bool,
@@ -271,7 +271,7 @@ pub const TextBox = struct {
         max_len: usize = 64,
     }) !TextBox {
         var self = TextBox{
-            .content = try TextVariable.init(.{
+            .inner_text = try TextVariable.init(.{
                 .x = settings.x,
                 .y = settings.y,
                 .body = "",
@@ -289,25 +289,25 @@ pub const TextBox = struct {
             .anim_bar_len = 0.0,
         };
 
-        self.content.body = try alloc.alloc(u8, settings.max_len + 1);
-        @memset(self.content.body, 0);
-        @memcpy(self.content.body[0..settings.default_body.len], settings.default_body);
+        self.inner_text.body = try alloc.alloc(u8, settings.max_len + 1);
+        @memset(self.inner_text.body, 0);
+        @memcpy(self.inner_text.body[0..settings.default_body.len], settings.default_body);
         return self;
     }
 
     pub fn deinit(self: *TextBox, alloc: std.mem.Allocator) void {
-        alloc.free(self.content.body);
+        alloc.free(self.inner_text.body);
     }
 
     pub fn update(self: *TextBox) !void {
         const min_length = 96.0;
-        const base_bar_len = @max(min_length, self.content.hitbox.width);
+        const base_bar_len = @max(min_length, self.inner_text.hitbox.width);
 
         // draw base underline
         rl.drawRectangleRec(
             .init(
-                self.content.hitbox.x,
-                self.content.hitbox.y + self.content.hitbox.height - 12.0,
+                self.inner_text.hitbox.x,
+                self.inner_text.hitbox.y + self.inner_text.hitbox.height - 12.0,
                 base_bar_len,
                 2.0,
             ),
@@ -315,14 +315,14 @@ pub const TextBox = struct {
         );
 
         // draw anime underline
-        self.anim_bar_len = if (self.anim_bar_len + 1 < self.content.hitbox.width)
+        self.anim_bar_len = if (self.anim_bar_len + 1 < self.inner_text.hitbox.width)
             self.anim_bar_len + 1.0
         else
             @max(self.anim_bar_len - 1.0, 0.0);
         rl.drawRectangleRec(
             .init(
-                self.content.hitbox.x,
-                self.content.hitbox.y + self.content.hitbox.height - 12.0,
+                self.inner_text.hitbox.x,
+                self.inner_text.hitbox.y + self.inner_text.hitbox.height - 12.0,
                 self.anim_bar_len,
                 2.0,
             ),
@@ -354,23 +354,23 @@ pub const TextBox = struct {
 
                 var key = rl.getCharPressed(); // get char pressed
                 while (key != 0) { // loop until all chars have been processed
-                    if (self.len < self.content.body.len - 1) {
-                        self.content.body[self.len] = @intCast(key); // set last character to key
+                    if (self.len < self.inner_text.body.len - 1) {
+                        self.inner_text.body[self.len] = @intCast(key); // set last character to key
                         self.len += 1; // increase len
                     }
                     key = rl.getCharPressed(); // get next char
                 }
             };
 
-        self.content.hitbox = self.content.getHitbox(); // draw underline for length of buffer
+        self.inner_text.hitbox = self.inner_text.getHitbox(); // draw underline for length of buffer
 
-        self.content.body[self.len] = 0; // set last char to '\0' so its readable as a sentinel value
-        self.content.drawBuffer(self.content.body[0..self.len]);
+        self.inner_text.body[self.len] = 0; // set last char to '\0' so its readable as a sentinel value
+        self.inner_text.drawBuffer(self.inner_text.body[0..self.len]);
     }
 
     /// Returns biggest possible hitbox given the maximum length and font size
     pub fn getShadowHitbox(self: *const TextBox) rl.Rectangle {
-        var shadow_hitbox = self.content.getHitbox();
+        var shadow_hitbox = self.inner_text.getHitbox();
         shadow_hitbox.width = shadow_hitbox.height * @as(f32, @floatFromInt(self.max_len));
         return shadow_hitbox;
     }
@@ -461,7 +461,7 @@ pub const TextBoxSet = struct {
             try self.boxes[i].update();
             const len = self.boxes[i].len;
             if (len > 0 and ref.len > len) {
-                @memcpy(ref[0..len], self.boxes[i].content.body[0..len]);
+                @memcpy(ref[0..len], self.boxes[i].inner_text.body[0..len]);
                 ref[len] = 0;
             } else if (len == 0) ref[0] = 0;
         }
@@ -471,8 +471,8 @@ pub const TextBoxSet = struct {
         var rect: rl.Rectangle = undefined;
         rect.x = self.labels[0].x;
         rect.y = self.labels[0].y;
-        rect.width = self.boxes[0].content.getHitbox().width;
-        rect.height = self.boxes[0].content.getHitbox().height * @as(f32, @floatFromInt(self.boxes.len));
+        rect.width = self.boxes[0].inner_text.getHitbox().width;
+        rect.height = self.boxes[0].inner_text.getHitbox().height * @as(f32, @floatFromInt(self.boxes.len));
         return rect;
     }
 };

@@ -203,7 +203,10 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     self.sock = try network.Socket.create(.ipv4, .tcp);
     errdefer self.sock.close();
 
-    try self.sock.bindToPort(self.settings.port);
+    self.sock.bindToPort(self.settings.port) catch |err| {
+        commons.print("Error initializing server: Couldn't bind to port {}. ({})", .{ self.settings.port, err }, .red);
+        return err;
+    };
 
     try self.sock.listen();
 

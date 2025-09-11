@@ -61,8 +61,8 @@ pub fn update(self: *Self, game: *Game) !void {
             const port_box = self.text_box_set.boxes[1];
             const error_text = try ui.Text.init(.{
                 .body = "not a valid number!",
-                .x = port_box.content.hitbox.x + port_box.getShadowHitbox().width,
-                .y = port_box.content.hitbox.y,
+                .x = port_box.inner_text.hitbox.x + port_box.getShadowHitbox().width,
+                .y = port_box.inner_text.hitbox.y,
                 .color = .red,
             });
             error_text.update();
