@@ -50,25 +50,13 @@ fn setServer(game: *Game) !void {
     if (game.server == null) game.server = try Server.init(game.alloc, game.settings.server);
 }
 
-fn setClient(self: *Self, game: *Game) !void {
-    if (self.nickname_input.len != 0) { // only if nickname isn't empty
-        if (game.client == null) game.client = Client.init(
-            game.alloc,
-            game.settings,
-            socket_packet.ClientConnect.init(self.nickname_input.content.body),
-        ) catch null;
-
-        if (game.client) |_| game.state = .client_setup;
-    }
-}
-
 pub fn update(self: *Self, game: *Game) !void {
     rl.beginDrawing();
     rl.clearBackground(.black);
 
     try self.buttons.update(.{
         .{ setServer, .{game} },
-        .{ setClient, .{ self, game } },
+        .{ states.clientSetup, .{game} },
         .{ states.openSettings, .{game} },
     });
 
