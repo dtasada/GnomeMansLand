@@ -11,6 +11,7 @@ const Self = @This();
 
 text_box_set: ui.TextBoxSet,
 join_button: ui.Button,
+/// u16 port number can only be 5 chars
 server_port_string_buf: [6]u8,
 
 pub fn init(alloc: std.mem.Allocator, game: *Game) !Self {
@@ -44,8 +45,6 @@ pub fn update(self: *Self, game: *Game) !void {
     rl.beginDrawing();
     rl.clearBackground(.black);
 
-    // u16 port number can only be 5 chars, ipv4 can only be 15
-
     var refs: [2][]u8 = [_][]u8{
         game.settings.multiplayer.server_host,
         &self.server_port_string_buf,
@@ -61,8 +60,8 @@ pub fn update(self: *Self, game: *Game) !void {
             const port_box = self.text_box_set.boxes[1];
             const error_text = try ui.Text.init(.{
                 .body = "not a valid number!",
-                .x = port_box.content.hitbox.x + port_box.getShadowHitbox().width,
-                .y = port_box.content.hitbox.y,
+                .x = port_box.inner_text.hitbox.x + port_box.getShadowHitbox().width,
+                .y = port_box.inner_text.hitbox.y,
                 .color = .red,
             });
             error_text.update();

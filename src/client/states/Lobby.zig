@@ -46,16 +46,12 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     self.buttons.deinit(alloc);
 }
 
-fn setServer(game: *Game) !void {
-    if (game.server == null) game.server = try Server.init(game.alloc, game.settings.server);
-}
-
 pub fn update(self: *Self, game: *Game) !void {
     rl.beginDrawing();
     rl.clearBackground(.black);
 
     try self.buttons.update(.{
-        .{ setServer, .{game} },
+        .{ states.serverSetup, .{game} },
         .{ states.clientSetup, .{game} },
         .{ states.openSettings, .{game} },
     });
