@@ -123,8 +123,8 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
 
     self.lobby = try states.Lobby.init(self.alloc);
     self.lobby_settings = try states.LobbySettings.init(self.alloc);
-    self.client_setup = try states.ClientSetup.init(self.alloc);
     self.server_setup = try states.ServerSetup.init(self.alloc);
+    self.client_setup = try states.ClientSetup.init(self.alloc, self);
 
     return self;
 }

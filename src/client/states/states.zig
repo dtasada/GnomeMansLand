@@ -1,4 +1,7 @@
 const Game = @import("../Game.zig");
+const Client = @import("../Client.zig");
+
+const socket_packet = @import("../../socket_packet.zig");
 
 pub const Lobby = @import("Lobby.zig");
 pub const LobbySettings = @import("LobbySettings.zig");
@@ -11,4 +14,22 @@ pub fn openSettings(game: *Game) void {
 
 pub fn openLobby(game: *Game) void {
     game.state = .lobby;
+}
+
+pub fn clientSetup(game: *Game) void {
+    game.state = .client_setup;
+}
+
+pub fn openGame(game: *Game) void {
+    if (game.lobby.nickname_input.len != 0) { // only if nickname isn't empty
+        if (game.client) |client| client.deinit(game.alloc);
+
+        game.client = Client.init(
+            game.alloc,
+            game.settings,
+            socket_packet.ClientConnect.init(game.lobby.nickname_input.content.body),
+        ) catch null;
+
+        if (game.client) |_| game.state = .game;
+    }
 }

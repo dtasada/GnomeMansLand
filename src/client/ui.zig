@@ -210,8 +210,8 @@ fn Text_(M: bool) type {
             return self;
         }
 
-        /// Returns hitbox for text. Optionally pass in a text length
-        fn getHitbox(self: *Text_(M)) rl.Rectangle {
+        /// Returns hitbox for text.
+        fn getHitbox(self: *const Text_(M)) rl.Rectangle {
             const dimensions = rl.measureTextEx(
                 self.font,
                 commons.getCString(self.body),
@@ -248,6 +248,7 @@ fn Text_(M: bool) type {
 pub const BoxLabel = struct {
     label: []const u8,
     max_len: usize, // input size excluding sentinel
+    default_value: []const u8,
 };
 pub const TextBox = struct {
     content: TextVariable,
@@ -329,9 +330,7 @@ pub const TextBox = struct {
         );
 
         if (rl.isMouseButtonPressed(.left)) {
-            var shadow_hitbox = self.content.getHitbox();
-            shadow_hitbox.width = shadow_hitbox.height * @as(f32, @floatFromInt(self.max_len));
-            self.focused = rl.checkCollisionPointRec(rl.getMousePosition(), shadow_hitbox);
+            self.focused = rl.checkCollisionPointRec(rl.getMousePosition(), self.getShadowHitbox());
         }
 
         if (self.focused)
@@ -365,8 +364,15 @@ pub const TextBox = struct {
 
         self.content.hitbox = self.content.getHitbox(); // draw underline for length of buffer
 
-        self.content.body[self.len] = 0; // set last char to '\0' so its readable as a cstring
+        self.content.body[self.len] = 0; // set last char to '\0' so its readable as a sentinel value
         self.content.drawBuffer(self.content.body[0..self.len]);
+    }
+
+    /// Returns biggest possible hitbox given the maximum length and font size
+    pub fn getShadowHitbox(self: *const TextBox) rl.Rectangle {
+        var shadow_hitbox = self.content.getHitbox();
+        shadow_hitbox.width = shadow_hitbox.height * @as(f32, @floatFromInt(self.max_len));
+        return shadow_hitbox;
     }
 };
 
@@ -427,6 +433,7 @@ pub const TextBoxSet = struct {
                 .font = settings.font,
                 .font_size = settings.font_size,
                 .max_len = labels[i].max_len,
+                .default_body = @constCast(labels[i].default_value),
             });
         }
 
@@ -454,9 +461,18 @@ pub const TextBoxSet = struct {
             try self.boxes[i].update();
             const len = self.boxes[i].len;
             if (len > 0 and ref.len > len) {
-                @memcpy(ref[0 .. len - 1], self.boxes[i].content.body[0 .. len - 1]);
-                ref[len - 1] = 0;
-            }
+                @memcpy(ref[0..len], self.boxes[i].content.body[0..len]);
+                ref[len] = 0;
+            } else if (len == 0) ref[0] = 0;
         }
+    }
+
+    pub fn getHitbox(self: *TextBoxSet) rl.Rectangle {
+        var rect: rl.Rectangle = undefined;
+        rect.x = self.labels[0].x;
+        rect.y = self.labels[0].y;
+        rect.width = self.boxes[0].content.getHitbox().width;
+        rect.height = self.boxes[0].content.getHitbox().height * @as(f32, @floatFromInt(self.boxes.len));
+        return rect;
     }
 };

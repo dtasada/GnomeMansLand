@@ -99,8 +99,12 @@ fn handleClientSend(self: *Self, client: *Client) !void {
         // send necessary game info
         for (self.game_data.players.items) |p| {
             const player_packet = socket_packet.Player.init(p);
-            const player_string = try std.json.Stringify.valueAlloc(self.alloc, player_packet, .{});
+            const player_string = std.json.Stringify.valueAlloc(self.alloc, player_packet, .{}) catch |err| {
+                commons.print("Could not stringify packet: {}\n", .{err}, .red);
+                return;
+            };
             defer self.alloc.free(player_string);
+
             client.send(self.alloc, player_string) catch |err| switch (err) {
                 error.ConnectionResetByPeer, error.BrokenPipe => break :loop,
                 else => return err,
