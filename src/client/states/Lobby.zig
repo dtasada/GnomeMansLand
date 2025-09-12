@@ -12,15 +12,23 @@ const Game = @import("../Game.zig");
 
 const Self = @This();
 
+nickname_input_label: ui.Text,
 nickname_input: ui.TextBox,
 buttons: ui.ButtonSet,
 title_text: ui.Text,
 
 pub fn init(alloc: std.mem.Allocator) !Self {
+    const nickname_input_label = try ui.Text.init(.{
+        .body = "nickname: ",
+        .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0 - 120,
+        .y = 480,
+    });
+
     return .{
+        .nickname_input_label = nickname_input_label,
         .nickname_input = try ui.TextBox.init(alloc, .{
-            .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0 - 120,
-            .y = 480,
+            .x = nickname_input_label.getRight() + 16.0,
+            .y = nickname_input_label.y,
         }),
         .buttons = try ui.ButtonSet.initGeneric(
             alloc,
@@ -41,13 +49,9 @@ pub fn init(alloc: std.mem.Allocator) !Self {
     };
 }
 
-pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
     self.nickname_input.deinit(alloc);
     self.buttons.deinit(alloc);
-}
-
-fn setServer(game: *Game) !void {
-    if (game.server == null) game.server = try Server.init(game.alloc, game.settings.server);
 }
 
 pub fn update(self: *Self, game: *Game) !void {
@@ -55,13 +59,14 @@ pub fn update(self: *Self, game: *Game) !void {
     rl.clearBackground(.black);
 
     try self.buttons.update(.{
-        .{ setServer, .{game} },
+        .{ states.serverSetup, .{game} },
         .{ states.clientSetup, .{game} },
         .{ states.openSettings, .{game} },
     });
 
     self.title_text.update();
 
+    self.nickname_input_label.update();
     try self.nickname_input.update();
 
     rl.endDrawing();

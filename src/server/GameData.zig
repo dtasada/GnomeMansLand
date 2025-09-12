@@ -26,9 +26,9 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !Self {
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     self.world_data.deinit(alloc);
 
-    for (self.players.items) |p| {
+    for (self.players.items) |p|
         alloc.free(p.nickname);
-    }
+
     self.players.deinit(alloc);
 }
 
@@ -63,7 +63,7 @@ pub const WorldData = struct {
         return self;
     }
 
-    pub fn deinit(self: *WorldData, alloc: std.mem.Allocator) void {
+    pub fn deinit(self: *const WorldData, alloc: std.mem.Allocator) void {
         alloc.free(self.height_map);
     }
 

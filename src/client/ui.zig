@@ -60,7 +60,7 @@ pub const Button = struct {
         return self;
     }
 
-    pub fn getHitbox(self: *Button) rl.Rectangle {
+    pub fn getHitbox(self: *const Button) rl.Rectangle {
         const text_dimensions = rl.measureTextEx(
             self.text.font,
             commons.getCString(self.text.body),
@@ -148,11 +148,11 @@ pub const ButtonSet = struct {
         return self;
     }
 
-    pub fn deinit(self: *ButtonSet, alloc: std.mem.Allocator) void {
+    pub fn deinit(self: *const ButtonSet, alloc: std.mem.Allocator) void {
         alloc.free(self.buttons);
     }
 
-    pub fn update(self: *ButtonSet, actions_and_args: anytype) !void {
+    pub fn update(self: *const ButtonSet, actions_and_args: anytype) !void {
         const fields = std.meta.fields(@TypeOf(actions_and_args));
         if (fields.len != self.buttons.len) {
             commons.print("Amount of tuples passed to ButtonSet.update must equal amount of buttons passed in ButtonSet.init\n", .{}, .red);
@@ -211,7 +211,7 @@ fn Text_(M: bool) type {
         }
 
         /// Returns hitbox for text.
-        fn getHitbox(self: *const Text_(M)) rl.Rectangle {
+        pub fn getHitbox(self: *const Text_(M)) rl.Rectangle {
             const dimensions = rl.measureTextEx(
                 self.font,
                 commons.getCString(self.body),
@@ -221,14 +221,19 @@ fn Text_(M: bool) type {
             return rl.Rectangle.init(self.x, self.y, dimensions.x, @floatFromInt(@intFromEnum(self.font_size)));
         }
 
+        pub inline fn getRight(self: *const Text_(M)) f32 {
+            const hitbox = self.getHitbox();
+            return hitbox.x + hitbox.width;
+        }
+
         /// Draws text on the screen.
-        pub fn update(self: Text_(M)) void {
+        pub fn update(self: *const Text_(M)) void {
             self.drawBuffer(self.body);
         }
 
         /// Actually draws the text on the screen. buf is passed to allow drawing any buffer.
         /// Kinda bs but necessary for TextBox lol
-        pub fn drawBuffer(self: Text_(M), buf: string_type) void {
+        pub fn drawBuffer(self: *const Text_(M), buf: string_type) void {
             rl.drawTextEx(
                 self.font,
                 commons.getCString(buf),
@@ -251,7 +256,8 @@ pub const BoxLabel = struct {
     default_value: []const u8,
 };
 pub const TextBox = struct {
-    content: TextVariable,
+    label: Text,
+    inner_text: TextVariable,
     len: usize,
     max_len: usize,
     focused: bool,
@@ -263,6 +269,7 @@ pub const TextBox = struct {
         x: f32,
         y: f32,
         default_body: []const u8 = "",
+        label: []const u8 = "",
         font: ?rl.Font = null,
         font_size: FontSize = .body,
         spacing: f32 = 2.0,
@@ -270,11 +277,17 @@ pub const TextBox = struct {
         anchor: Anchor = .topleft,
         max_len: usize = 64,
     }) !TextBox {
+        const label = try Text.init(.{
+            .x = settings.x,
+            .y = settings.y,
+            .body = settings.label,
+        });
         var self = TextBox{
-            .content = try TextVariable.init(.{
-                .x = settings.x,
+            .label = label,
+            .inner_text = try TextVariable.init(.{
+                .x = label.getRight(),
                 .y = settings.y,
-                .body = "",
+                .body = "", // gets set right after this
                 .font = settings.font orelse chalk_font,
                 .font_size = settings.font_size,
                 .spacing = settings.spacing,
@@ -289,25 +302,25 @@ pub const TextBox = struct {
             .anim_bar_len = 0.0,
         };
 
-        self.content.body = try alloc.alloc(u8, settings.max_len + 1);
-        @memset(self.content.body, 0);
-        @memcpy(self.content.body[0..settings.default_body.len], settings.default_body);
+        self.inner_text.body = try alloc.alloc(u8, settings.max_len + 1);
+        @memset(self.inner_text.body, 0);
+        @memcpy(self.inner_text.body[0..settings.default_body.len], settings.default_body);
         return self;
     }
 
-    pub fn deinit(self: *TextBox, alloc: std.mem.Allocator) void {
-        alloc.free(self.content.body);
+    pub fn deinit(self: *const TextBox, alloc: std.mem.Allocator) void {
+        alloc.free(self.inner_text.body);
     }
 
     pub fn update(self: *TextBox) !void {
         const min_length = 96.0;
-        const base_bar_len = @max(min_length, self.content.hitbox.width);
+        const base_bar_len = @max(min_length, self.inner_text.hitbox.width);
 
         // draw base underline
         rl.drawRectangleRec(
             .init(
-                self.content.hitbox.x,
-                self.content.hitbox.y + self.content.hitbox.height - 12.0,
+                self.inner_text.hitbox.x,
+                self.inner_text.hitbox.y + self.inner_text.hitbox.height - 12.0,
                 base_bar_len,
                 2.0,
             ),
@@ -315,14 +328,14 @@ pub const TextBox = struct {
         );
 
         // draw anime underline
-        self.anim_bar_len = if (self.anim_bar_len + 1 < self.content.hitbox.width)
+        self.anim_bar_len = if (self.anim_bar_len + 1 < self.inner_text.hitbox.width)
             self.anim_bar_len + 1.0
         else
             @max(self.anim_bar_len - 1.0, 0.0);
         rl.drawRectangleRec(
             .init(
-                self.content.hitbox.x,
-                self.content.hitbox.y + self.content.hitbox.height - 12.0,
+                self.inner_text.hitbox.x,
+                self.inner_text.hitbox.y + self.inner_text.hitbox.height - 12.0,
                 self.anim_bar_len,
                 2.0,
             ),
@@ -354,23 +367,23 @@ pub const TextBox = struct {
 
                 var key = rl.getCharPressed(); // get char pressed
                 while (key != 0) { // loop until all chars have been processed
-                    if (self.len < self.content.body.len - 1) {
-                        self.content.body[self.len] = @intCast(key); // set last character to key
+                    if (self.len < self.inner_text.body.len - 1) {
+                        self.inner_text.body[self.len] = @intCast(key); // set last character to key
                         self.len += 1; // increase len
                     }
                     key = rl.getCharPressed(); // get next char
                 }
             };
 
-        self.content.hitbox = self.content.getHitbox(); // draw underline for length of buffer
+        self.inner_text.hitbox = self.inner_text.getHitbox(); // draw underline for length of buffer
 
-        self.content.body[self.len] = 0; // set last char to '\0' so its readable as a sentinel value
-        self.content.drawBuffer(self.content.body[0..self.len]);
+        self.inner_text.body[self.len] = 0; // set last char to '\0' so its readable as a sentinel value
+        self.inner_text.drawBuffer(self.inner_text.body[0..self.len]);
     }
 
     /// Returns biggest possible hitbox given the maximum length and font size
     pub fn getShadowHitbox(self: *const TextBox) rl.Rectangle {
-        var shadow_hitbox = self.content.getHitbox();
+        var shadow_hitbox = self.inner_text.getHitbox();
         shadow_hitbox.width = shadow_hitbox.height * @as(f32, @floatFromInt(self.max_len));
         return shadow_hitbox;
     }
@@ -428,7 +441,7 @@ pub const TextBoxSet = struct {
 
         for (self.labels, 0..) |label, i| {
             self.boxes[i] = try TextBox.init(alloc, .{
-                .x = label.x + longest_label_x,
+                .x = label.x + longest_label_x + 16.0,
                 .y = label.y,
                 .font = settings.font,
                 .font_size = settings.font_size,
@@ -440,7 +453,7 @@ pub const TextBoxSet = struct {
         return self;
     }
 
-    pub fn deinit(self: *TextBoxSet, alloc: std.mem.Allocator) void {
+    pub fn deinit(self: *const TextBoxSet, alloc: std.mem.Allocator) void {
         for (self.boxes) |*text_box|
             text_box.deinit(alloc);
 
@@ -449,7 +462,7 @@ pub const TextBoxSet = struct {
     }
 
     /// Pass in references to strings. Writes sentinel at the end.
-    pub fn update(self: *TextBoxSet, references: []const []u8) !void {
+    pub fn update(self: *const TextBoxSet, references: []const []u8) !void {
         if (references.len != self.boxes.len) {
             commons.print("Amount of references passed to TextBoxSet.update must equal amount of labels passed in TextBoxSet.init\n", .{}, .red);
             return error.TextBoxSetNotMatching;
@@ -461,18 +474,18 @@ pub const TextBoxSet = struct {
             try self.boxes[i].update();
             const len = self.boxes[i].len;
             if (len > 0 and ref.len > len) {
-                @memcpy(ref[0..len], self.boxes[i].content.body[0..len]);
+                @memcpy(ref[0..len], self.boxes[i].inner_text.body[0..len]);
                 ref[len] = 0;
             } else if (len == 0) ref[0] = 0;
         }
     }
 
-    pub fn getHitbox(self: *TextBoxSet) rl.Rectangle {
+    pub fn getHitbox(self: *const TextBoxSet) rl.Rectangle {
         var rect: rl.Rectangle = undefined;
         rect.x = self.labels[0].x;
         rect.y = self.labels[0].y;
-        rect.width = self.boxes[0].content.getHitbox().width;
-        rect.height = self.boxes[0].content.getHitbox().height * @as(f32, @floatFromInt(self.boxes.len));
+        rect.width = self.boxes[0].inner_text.getHitbox().width;
+        rect.height = self.boxes[0].inner_text.getHitbox().height * @as(f32, @floatFromInt(self.boxes.len));
         return rect;
     }
 };

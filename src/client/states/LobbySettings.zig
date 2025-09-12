@@ -21,11 +21,11 @@ pub fn init(alloc: std.mem.Allocator) !Self {
     };
 }
 
-pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
     defer self.buttons.deinit(alloc);
 }
 
-pub fn update(self: *Self, game: *Game) !void {
+pub fn update(self: *const Self, game: *Game) !void {
     rl.beginDrawing();
     rl.clearBackground(.black);
 

@@ -33,7 +33,7 @@ const Client = struct {
     id: u32,
     open: std.atomic.Value(bool),
 
-    pub fn send(self: *Client, alloc: std.mem.Allocator, message: []const u8) !void {
+    pub fn send(self: *const Client, alloc: std.mem.Allocator, message: []const u8) !void {
         const message_newline = try std.fmt.allocPrint(alloc, "{s}\n", .{message});
         defer alloc.free(message_newline);
 
@@ -94,7 +94,7 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
     commons.print("Client disconnected.\n", .{}, .blue);
 }
 
-fn handleClientSend(self: *Self, client: *Client) !void {
+fn handleClientSend(self: *const Self, client: *Client) !void {
     loop: while (self.running.load(.monotonic) and client.open.load(.monotonic)) : (std.Thread.sleep(polling_rate * std.time.ns_per_ms)) {
         // send necessary game info
         for (self.game_data.players.items) |p| {
@@ -203,7 +203,10 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     self.sock = try network.Socket.create(.ipv4, .tcp);
     errdefer self.sock.close();
 
-    try self.sock.bindToPort(self.settings.port);
+    self.sock.bindToPort(self.settings.port) catch |err| {
+        commons.print("Error initializing server: Couldn't bind to port {}. ({})", .{ self.settings.port, err }, .red);
+        return err;
+    };
 
     try self.sock.listen();
 

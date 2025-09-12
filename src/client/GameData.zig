@@ -104,11 +104,11 @@ pub const WorldData = struct {
         self._height_map_filled += world_data_chunk.height_map.len;
     }
 
-    pub fn isComplete(self: *WorldData) bool {
+    pub fn isComplete(self: *const WorldData) bool {
         return self._height_map_filled == self.size.x * self.size.y;
     }
 
-    pub fn deinit(self: *WorldData, alloc: std.mem.Allocator) void {
+    pub fn deinit(self: *const WorldData, alloc: std.mem.Allocator) void {
         alloc.free(self.height_map);
 
         // Free GPU resources
@@ -162,7 +162,7 @@ pub const WorldData = struct {
         self.model.?.transform = self.model.?.transform.multiply(translation_matrix);
     }
 
-    fn genTerrainMesh(self: *WorldData) !rl.Mesh {
+    fn genTerrainMesh(self: *const WorldData) !rl.Mesh {
         var mesh: rl.Mesh = std.mem.zeroes(rl.Mesh);
 
         const width = self.size.x;
@@ -256,7 +256,7 @@ pub const WorldData = struct {
         return mesh;
     }
 
-    pub fn getHeight(self: *WorldData, x: usize, y: usize) f32 {
+    pub fn getHeight(self: *const WorldData, x: usize, y: usize) f32 {
         return self.height_map[y * self.size.x + x];
     }
 };

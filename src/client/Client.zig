@@ -167,6 +167,6 @@ fn handleMessage(self: *Self, message: []const u8) !void {
     }
 }
 
-pub fn send(self: *Self, message: []const u8) !void {
+pub fn send(self: *const Self, message: []const u8) !void {
     _ = try self.sock.send(message);
 }

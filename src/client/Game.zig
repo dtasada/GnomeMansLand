@@ -39,56 +39,6 @@ server_setup: states.ServerSetup,
 // additional camera attributes
 pan_sensitivity: f32 = 0.1,
 
-fn centerMouse() void {
-    const margin = 24;
-    const x = rl.getMouseX();
-    const y = rl.getMouseY();
-    const center_x = @divFloor(rl.getScreenWidth(), 2);
-    const center_y = @divFloor(rl.getScreenHeight(), 2);
-
-    if (x >= rl.getScreenWidth() - margin or x <= margin)
-        rl.setMousePosition(center_x, y);
-    if (y >= rl.getScreenHeight() - margin or y <= margin)
-        rl.setMousePosition(x, center_y);
-}
-
-fn toggleMouse(is_enabled: *bool) void {
-    is_enabled.* = !is_enabled.*;
-
-    if (is_enabled.*) {
-        rl.enableCursor();
-        rl.showCursor();
-    } else {
-        rl.disableCursor();
-        rl.hideCursor();
-    }
-}
-
-fn setupLights(self: *Self) !void {
-    self.light_shader = try rl.loadShader("./resources/shaders/lighting.vert.glsl", "./resources/shaders/lighting.frag.glsl");
-    self.light_shader.locs[@intFromEnum(rl.ShaderLocationIndex.vector_view)] = rl.getShaderLocation(self.light_shader, "viewPos");
-    const ambient_loc = rl.getShaderLocation(self.light_shader, "ambient");
-    const ambient: [4]f32 = .{ 0.1, 0.1, 0.1, 1.0 };
-    rl.setShaderValue(self.light_shader, ambient_loc, &ambient, .vec4);
-
-    self.lights = try std.ArrayList(Light).initCapacity(self.alloc, 32);
-    try self.lights.append(self.alloc, Light.init(
-        .point,
-        rl.Vector3.init(200, 200, 0),
-        rl.Vector3.zero(),
-        .white,
-        1,
-        self.light_shader,
-    ));
-}
-
-fn parseSettings(alloc: std.mem.Allocator) !std.json.Parsed(Settings) {
-    const file = try std.fs.cwd().readFileAlloc(alloc, "./settings.json", 4096);
-    defer alloc.free(file);
-
-    return std.json.parseFromSlice(Settings, alloc, file, .{});
-}
-
 pub fn init(alloc: std.mem.Allocator) !*Self {
     var self: *Self = try alloc.create(Self);
     errdefer alloc.destroy(self);
@@ -102,7 +52,7 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
     self.settings = self._settings_parsed.value;
     if (self.settings.server.world_generation.resolution[0] * self.settings.server.world_generation.resolution[1] > 256 * 256) {
         commons.print("Error in settings: world_generation resolution cannot be greater than 256x256\n", .{}, .red);
-        return error.WorldGenTooLarge;
+        return error.TheMapIsTooMassive;
     }
 
     self.camera = null;
@@ -123,7 +73,7 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
 
     self.lobby = try states.Lobby.init(self.alloc);
     self.lobby_settings = try states.LobbySettings.init(self.alloc);
-    self.server_setup = try states.ServerSetup.init(self.alloc);
+    self.server_setup = try states.ServerSetup.init(self.alloc, self);
     self.client_setup = try states.ClientSetup.init(self.alloc, self);
 
     return self;
@@ -143,12 +93,113 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
 
     self.lights.deinit(self.alloc);
     self.light_shader.unload();
-    self._settings_parsed.deinit();
-    _ = self._gpa.deinit();
 
-    alloc.destroy(self);
+    defer alloc.destroy(self);
+    defer _ = self._gpa.deinit();
+    defer self._settings_parsed.deinit();
+
+    const settings_string: []u8 = std.json.Stringify.valueAlloc(self.alloc, self._settings_parsed.value, .{ .whitespace = .indent_4 }) catch |err| {
+        commons.print("Couldn't save settings to './settings.json': {}\n", .{err}, .red);
+        return;
+    };
+    defer self.alloc.free(settings_string);
+
+    const settings_file: std.fs.File = std.fs.cwd().createFile("./settings.json", .{}) catch |err| {
+        commons.print("Couldn't save settings to './settings.json': {}\n", .{err}, .red);
+        return;
+    };
+
+    var settings_buf: [1024]u8 = undefined;
+    var file_writer = settings_file.writer(&settings_buf);
+    const interface = &file_writer.interface;
+    interface.writeAll(settings_string) catch |err| {
+        commons.print("Couldn't save settings to './settings.json': {}\n", .{err}, .red);
+        return;
+    };
+    interface.flush() catch |err| {
+        commons.print("Couldn't save settings to './settings.json': {}\n", .{err}, .red);
+        return;
+    };
 }
 
+/// wraps mouse around screen so the cursor won't leave the window
+fn centerMouse() void {
+    const margin = 24;
+    const x = rl.getMouseX();
+    const y = rl.getMouseY();
+    const center_x = @divFloor(rl.getScreenWidth(), 2);
+    const center_y = @divFloor(rl.getScreenHeight(), 2);
+
+    if (x >= rl.getScreenWidth() - margin or x <= margin)
+        rl.setMousePosition(center_x, y);
+    if (y >= rl.getScreenHeight() - margin or y <= margin)
+        rl.setMousePosition(x, center_y);
+}
+
+/// toggles is_enabled and enables or disables cursor.
+fn toggleMouse(is_enabled: *bool) void {
+    is_enabled.* = !is_enabled.*;
+
+    if (is_enabled.*) {
+        rl.enableCursor();
+        rl.showCursor();
+    } else {
+        rl.disableCursor();
+        rl.hideCursor();
+    }
+}
+
+/// sets game.light_shader and game.lights
+fn setupLights(self: *Self) !void {
+    self.light_shader = try rl.loadShader("./resources/shaders/lighting.vert.glsl", "./resources/shaders/lighting.frag.glsl");
+    self.light_shader.locs[@intFromEnum(rl.ShaderLocationIndex.vector_view)] = rl.getShaderLocation(self.light_shader, "viewPos");
+    const ambient_loc = rl.getShaderLocation(self.light_shader, "ambient");
+    const ambient: [4]f32 = .{ 0.1, 0.1, 0.1, 1.0 };
+    rl.setShaderValue(self.light_shader, ambient_loc, &ambient, .vec4);
+
+    self.lights = try std.ArrayList(Light).initCapacity(self.alloc, 32);
+    try self.lights.append(self.alloc, Light.init(
+        .point,
+        rl.Vector3.init(200, 200, 0),
+        rl.Vector3.zero(),
+        .white,
+        1,
+        self.light_shader,
+    ));
+}
+
+/// parses settings from "./settings.json"
+fn parseSettings(alloc: std.mem.Allocator) !std.json.Parsed(Settings) {
+    const file = try std.fs.cwd().readFileAlloc(alloc, "./settings.json", 4096);
+    defer alloc.free(file);
+
+    return std.json.parseFromSlice(Settings, alloc, file, .{});
+}
+
+/// resets camera back to the middle of the world
+fn resetCamera(self: *Self) void {
+    if (self.client) |client| {
+        if (client.game_data.world_data) |world_data| {
+            self.camera = .{
+                .fovy = 100,
+                .position = rl.Vector3.init(
+                    @as(f32, @floatFromInt(world_data.size.x)) + @as(f32, @floatFromInt(world_data.size.x)) * 0.5,
+                    @as(f32, @floatFromInt(world_data.size.x)) + @as(f32, @floatFromInt(world_data.size.x)) * 0.5,
+                    @as(f32, @floatFromInt(world_data.size.x)) + @as(f32, @floatFromInt(world_data.size.y)) * 0.5,
+                ),
+                .projection = .orthographic,
+                .target = rl.Vector3.init(
+                    @as(f32, @floatFromInt(world_data.size.x)) * 0.5,
+                    0.0,
+                    @as(f32, @floatFromInt(world_data.size.y)) * 0.5,
+                ),
+                .up = rl.Vector3.init(0, 1, 0),
+            };
+        }
+    }
+}
+
+/// input handling
 fn handleKeys(self: *Self) !void {
     // pan the camera with middle mouse
     if (self.camera) |*camera| {
@@ -223,16 +274,9 @@ fn drawUi(self: *Self) void {
     }), 12, 32, 24, .white);
 
     rl.drawText(rl.textFormat("FPS: %d", .{rl.getFPS()}), 12, 52, 24, .white);
-
-    if (self.getMouseToWorld()) |mouse_to_world| {
-        rl.drawText(rl.textFormat("Mouse in world x: %f, y: %f, z: %f", .{
-            mouse_to_world.x,
-            mouse_to_world.y,
-            mouse_to_world.z,
-        }), 12, 72, 24, .white);
-    }
 }
 
+/// gets equivalent in-world position from 2d cursor position
 fn getMouseToWorld(self: *Self) ?rl.Vector3 {
     if (self.camera) |camera| {
         if (self.client) |client| {
@@ -245,9 +289,11 @@ fn getMouseToWorld(self: *Self) ?rl.Vector3 {
             }
         }
     }
+
     return null;
 }
 
+/// main game loop
 pub fn loop(self: *Self) !void {
     while (!rl.windowShouldClose()) {
         switch (self.state) {
@@ -277,23 +323,8 @@ pub fn loop(self: *Self) !void {
 
                 if (self.client) |client| {
                     if (client.game_data.world_data) |*world_data| {
-                        if (self.camera == null) {
-                            self.camera = .{
-                                .fovy = 100,
-                                .position = rl.Vector3.init(
-                                    @as(f32, @floatFromInt(world_data.size.x)) + @as(f32, @floatFromInt(world_data.size.x)) * 0.5,
-                                    @as(f32, @floatFromInt(world_data.size.x)) + @as(f32, @floatFromInt(world_data.size.x)) * 0.5,
-                                    @as(f32, @floatFromInt(world_data.size.x)) + @as(f32, @floatFromInt(world_data.size.y)) * 0.5,
-                                ),
-                                .projection = .orthographic,
-                                .target = rl.Vector3.init(
-                                    @as(f32, @floatFromInt(world_data.size.x)) * 0.5,
-                                    0.0,
-                                    @as(f32, @floatFromInt(world_data.size.y)) * 0.5,
-                                ),
-                                .up = rl.Vector3.init(0, 1, 0),
-                            };
-                        }
+                        if (self.camera == null)
+                            self.resetCamera();
 
                         for (client.game_data.players.items) |player| {
                             if (player.position) |pos| {
@@ -323,5 +354,6 @@ pub fn loop(self: *Self) !void {
                 rl.endDrawing();
             },
         }
+        rl.drawFPS(200, 200);
     }
 }
