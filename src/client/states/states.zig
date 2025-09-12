@@ -43,7 +43,6 @@ pub fn openGame(game: *Game) void {
 }
 
 pub fn hostServer(game: *Game) !void {
-    std.debug.print("host server\n", .{});
     if (game.server) |server| server.deinit(game.alloc);
 
     game.server = Server.init(game.alloc, game.settings.server) catch null;

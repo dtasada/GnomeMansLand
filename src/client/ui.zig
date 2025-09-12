@@ -283,9 +283,8 @@ pub const TextBox = struct {
             .body = settings.label,
         });
         var self = TextBox{
-            .label = label,
             .inner_text = try TextVariable.init(.{
-                .x = label.getRight(),
+                .x = settings.x,
                 .y = settings.y,
                 .body = "", // gets set right after this
                 .font = settings.font orelse chalk_font,
@@ -481,11 +480,11 @@ pub const TextBoxSet = struct {
     }
 
     pub fn getHitbox(self: *const TextBoxSet) rl.Rectangle {
-        var rect: rl.Rectangle = undefined;
-        rect.x = self.labels[0].x;
-        rect.y = self.labels[0].y;
-        rect.width = self.boxes[0].inner_text.getHitbox().width;
-        rect.height = self.boxes[0].inner_text.getHitbox().height * @as(f32, @floatFromInt(self.boxes.len));
-        return rect;
+        return .{
+            .x = self.labels[0].x,
+            .y = self.labels[0].y,
+            .width = self.boxes[0].inner_text.getHitbox().width,
+            .height = self.boxes[0].inner_text.getHitbox().height * @as(f32, @floatFromInt(self.boxes.len)),
+        };
     }
 };
