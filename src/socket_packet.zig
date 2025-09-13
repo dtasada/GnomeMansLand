@@ -22,7 +22,8 @@ pub const WorldDataChunk = struct {
 
     /// Caller is responsible for memory cleanup
     pub fn init(alloc: std.mem.Allocator, server_world_data: ServerGameData.WorldData) ![]WorldDataChunk {
-        const MAX_SIZE_BYTES = 65535;
+        // const MAX_SIZE_BYTES = 65535;
+        const MAX_SIZE_BYTES = 1024;
         const JSON_FLOAT_SIZE = 20;
         const JSON_OVERHEAD = 200;
 

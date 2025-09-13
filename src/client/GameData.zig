@@ -13,6 +13,8 @@ const Player = @import("../server/GameData.zig").Player;
 
 const GameData = @This();
 
+const MODEL_RESOLUTION = 64;
+
 world_data: ?WorldData,
 players: std.ArrayList(Player),
 
@@ -34,7 +36,7 @@ pub const WorldData = struct {
     height_map: []f32, // 2d in practice
     _height_map_filled: usize,
     size: commons.v2u,
-    model: ?rl.Model,
+    models: []?rl.Model,
 
     const Rgb = struct {
         r: i16,
@@ -88,12 +90,17 @@ pub const WorldData = struct {
     };
 
     pub fn init(alloc: std.mem.Allocator, first_packet: socket_packet.WorldDataChunk) !WorldData {
+        const chunks_x = (first_packet.total_size.x + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
+        const chunks_y = (first_packet.total_size.y + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
+        const amount_of_models = chunks_x * chunks_y;
+
         var self = WorldData{
             .size = first_packet.total_size,
             .height_map = try alloc.alloc(f32, first_packet.total_size.x * first_packet.total_size.y),
             ._height_map_filled = 0,
-            .model = null,
+            .models = try alloc.alloc(?rl.Model, amount_of_models),
         };
+        @memset(self.models, null);
 
         self.addChunk(first_packet);
         return self;
@@ -112,19 +119,41 @@ pub const WorldData = struct {
         alloc.free(self.height_map);
 
         // Free GPU resources
-        if (self.model) |m| rl.unloadModel(m);
+        for (self.models) |model| if (model) |m| rl.unloadModel(m);
+        alloc.free(self.models);
     }
 
     pub fn genModel(self: *WorldData, settings: Settings, light_shader: rl.Shader) !void {
-        self.model = try rl.Model.fromMesh(try self.genTerrainMesh());
+        const model_index = blk: {
+            var idx: ?usize = null;
+            for (self.models, 0..) |model, i|
+                if (model == null) {
+                    idx = i;
+                    break;
+                };
+
+            break :blk idx orelse return;
+        };
+
+        const chunks_x = (self.size.x + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
+        const chunk_x = model_index % chunks_x;
+        const chunk_y = model_index / chunks_x;
+
+        const min_x = chunk_x * MODEL_RESOLUTION;
+        const min_y = chunk_y * MODEL_RESOLUTION;
+        const max_x = @min(min_x + MODEL_RESOLUTION, self.size.x);
+        const max_y = @min(min_y + MODEL_RESOLUTION, self.size.y);
+
         var image = rl.Image.genColor(
-            @intCast(self.size.x),
-            @intCast(self.size.y),
+            @intCast(MODEL_RESOLUTION),
+            @intCast(MODEL_RESOLUTION),
             .blue,
         );
 
-        for (0..self.size.y) |y| {
-            for (0..self.size.x) |x| {
+        for (min_y..max_y) |y| {
+            for (min_x..max_x) |x| {
+                if (x >= self.size.x or y >= self.size.y) continue;
+
                 const height = (self.getHeight(x, y) + settings.server.world_generation.amplitude) / (2 * settings.server.world_generation.amplitude);
                 const tile: Rgb =
                     if (height <= TileData.water)
@@ -138,221 +167,130 @@ pub const WorldData = struct {
                     else
                         Rgb.init(240, 240, 240);
 
-                image.drawPixel(@intCast(x), @intCast(y), .{
-                    .r = @intCast(tile.r),
-                    .g = @intCast(tile.g),
-                    .b = @intCast(tile.b),
-                    .a = 255,
-                });
+                image.drawPixel(
+                    @intCast(x - min_x),
+                    @intCast(y - min_y),
+                    .{
+                        .r = @intCast(tile.r),
+                        .g = @intCast(tile.g),
+                        .b = @intCast(tile.b),
+                        .a = 255,
+                    },
+                );
             }
         }
         const tex = try rl.Texture.fromImage(image); // do not deinit the texture lol
 
-        if (self.model) |*m| {
-            m.materials[0].maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = tex;
-            m.materials[0].shader = light_shader;
-        }
+        const model = &self.models[model_index];
+        model.* = try rl.Model.fromMesh(try self.genTerrainMesh(min_x, max_x, min_y, max_y));
+        model.*.?.materials[0].maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = tex;
+        model.*.?.materials[0].shader = light_shader;
 
-        const translation_matrix = rl.Matrix.translate(
-            @as(f32, @floatFromInt(self.size.x)) * 0.5,
+        model.*.?.transform = rl.Matrix.translate(
+            @as(f32, @floatFromInt(chunk_x * MODEL_RESOLUTION)),
             0.0,
-            @as(f32, @floatFromInt(self.size.y)) * 0.5,
+            @as(f32, @floatFromInt(chunk_y * MODEL_RESOLUTION)),
         );
-
-        self.model.?.transform = self.model.?.transform.multiply(translation_matrix);
     }
 
-    fn genTerrainMesh(self: *const WorldData) !rl.Mesh {
+    fn genTerrainMesh(
+        self: *const WorldData,
+        min_x: usize,
+        max_x: usize,
+        min_y: usize,
+        max_y: usize,
+    ) !rl.Mesh {
         var mesh: rl.Mesh = std.mem.zeroes(rl.Mesh);
 
-        const width = self.size.x;
-        const height = self.size.y;
+        const width = max_x - min_x;
+        const height = max_y - min_y;
 
-        const surface_vertex_count = width * height;
-        const surface_triangle_count = (width - 1) * (height - 1) * 2;
+        const vertex_count = width * height;
+        const triangle_count = (width - 1) * (height - 1) * 2;
 
-        // Floor: 4 verts, 2 triangles
-        const floor_vertex_count = 4;
-        const floor_triangle_count = 2;
+        mesh.vertexCount = @intCast(vertex_count);
+        mesh.triangleCount = @intCast(triangle_count);
 
-        // Walls: each edge has (N-1) quads = 2*(N-1) triangles, 4*(N-1) verts
-        const wall_quads = (width - 1) * 2 + (height - 1) * 2;
-        const wall_vertex_count = wall_quads * 4;
-        const wall_triangle_count = wall_quads * 2;
-
-        const total_vertex_count = surface_vertex_count + floor_vertex_count + wall_vertex_count;
-        const total_triangle_count = surface_triangle_count + floor_triangle_count + wall_triangle_count;
-
-        mesh.vertexCount = @intCast(total_vertex_count);
-        mesh.triangleCount = @intCast(total_triangle_count);
-
-        mesh.vertices = @ptrCast(@alignCast(c.malloc(total_vertex_count * 3 * @sizeOf(f32))));
-        mesh.normals = @ptrCast(@alignCast(c.malloc(total_vertex_count * 3 * @sizeOf(f32))));
-        mesh.texcoords = @ptrCast(@alignCast(c.malloc(total_vertex_count * 2 * @sizeOf(f32))));
-        mesh.indices = @ptrCast(@alignCast(c.malloc(total_triangle_count * 3 * @sizeOf(u16))));
+        mesh.vertices = @ptrCast(@alignCast(c.malloc(vertex_count * 3 * @sizeOf(f32))));
+        mesh.normals = @ptrCast(@alignCast(c.malloc(vertex_count * 3 * @sizeOf(f32))));
+        mesh.texcoords = @ptrCast(@alignCast(c.malloc(vertex_count * 2 * @sizeOf(f32))));
+        mesh.indices = @ptrCast(@alignCast(c.malloc(triangle_count * 3 * @sizeOf(u16))));
 
         if (mesh.vertices == null or mesh.normals == null or
             mesh.texcoords == null or mesh.indices == null)
             return error.OutOfMemory;
 
-        const width_f: f32 = @floatFromInt(width);
-        const height_f: f32 = @floatFromInt(height);
-        const floor_y: f32 = -100.0;
+        // --- Vertices + texcoords
+        for (0..height) |yy| {
+            for (0..width) |xx| {
+                const index = yy * width + xx;
+                const world_x = min_x + xx;
+                const world_y = min_y + yy;
 
-        var vtx: usize = 0;
-        var tri: usize = 0;
+                const noise_value = self.getHeight(world_x, world_y);
 
-        // -------------------------
-        // 1. Terrain surface verts
-        // -------------------------
-        for (0..height) |y| {
-            for (0..width) |x| {
-                // const index = y * width + x;
-                const noise_value = self.getHeight(x, y);
+                // Local vertex position (chunk-local, not world!)
+                mesh.vertices[index * 3 + 0] = @as(f32, @floatFromInt(xx));
+                mesh.vertices[index * 3 + 1] = noise_value;
+                mesh.vertices[index * 3 + 2] = @as(f32, @floatFromInt(yy));
 
-                mesh.vertices[vtx * 3 + 0] = @as(f32, @floatFromInt(x)) - width_f / 2.0;
-                mesh.vertices[vtx * 3 + 1] = noise_value;
-                mesh.vertices[vtx * 3 + 2] = @as(f32, @floatFromInt(y)) - height_f / 2.0;
-
-                mesh.texcoords[vtx * 2 + 0] = @as(f32, @floatFromInt(x)) / (width_f - 1);
-                mesh.texcoords[vtx * 2 + 1] = @as(f32, @floatFromInt(y)) / (height_f - 1);
-
-                vtx += 1;
+                // Local UVs, normalized across the chunk
+                mesh.texcoords[index * 2 + 0] = @as(f32, @floatFromInt(xx)) / @as(f32, @floatFromInt(width - 1));
+                mesh.texcoords[index * 2 + 1] = @as(f32, @floatFromInt(yy)) / @as(f32, @floatFromInt(height - 1));
             }
         }
 
-        // Surface indices
-        for (0..height - 1) |y| {
-            for (0..width - 1) |x| {
-                const top_left = y * width + x;
+        // --- Indices
+        var triangle_index: usize = 0;
+        for (0..height - 1) |yy| {
+            for (0..width - 1) |xx| {
+                const top_left = yy * width + xx;
                 const top_right = top_left + 1;
-                const bottom_left = (y + 1) * width + x;
+                const bottom_left = (yy + 1) * width + xx;
                 const bottom_right = bottom_left + 1;
 
-                mesh.indices[tri * 3 + 0] = @intCast(top_left);
-                mesh.indices[tri * 3 + 1] = @intCast(bottom_left);
-                mesh.indices[tri * 3 + 2] = @intCast(top_right);
-                tri += 1;
+                mesh.indices[triangle_index * 3 + 0] = @truncate(top_left);
+                mesh.indices[triangle_index * 3 + 1] = @truncate(bottom_left);
+                mesh.indices[triangle_index * 3 + 2] = @truncate(top_right);
+                triangle_index += 1;
 
-                mesh.indices[tri * 3 + 0] = @intCast(top_right);
-                mesh.indices[tri * 3 + 1] = @intCast(bottom_left);
-                mesh.indices[tri * 3 + 2] = @intCast(bottom_right);
-                tri += 1;
+                mesh.indices[triangle_index * 3 + 0] = @truncate(top_right);
+                mesh.indices[triangle_index * 3 + 1] = @truncate(bottom_left);
+                mesh.indices[triangle_index * 3 + 2] = @truncate(bottom_right);
+                triangle_index += 1;
             }
         }
 
-        // -------------------------
-        // 2. Floor
-        // -------------------------
-        const floor_start = vtx;
+        // --- Normals
+        for (0..height) |yy| {
+            for (0..width) |xx| {
+                const index = yy * width + xx;
+                const world_x = min_x + xx;
+                const world_y = min_y + yy;
 
-        const fx0: f32 = -width_f / 2.0;
-        const fx1: f32 = width_f / 2.0;
-        const fz0: f32 = -height_f / 2.0;
-        const fz1: f32 = height_f / 2.0;
+                const x_prev = if (world_x > 0) world_x - 1 else world_x;
+                const x_next = if (world_x < self.size.x - 1) world_x + 1 else world_x;
+                const y_prev = if (world_y > 0) world_y - 1 else world_y;
+                const y_next = if (world_y < self.size.y - 1) world_y + 1 else world_y;
 
-        const floor_verts = [_]rl.Vector3{
-            .{ .x = fx0, .y = floor_y, .z = fz0 },
-            .{ .x = fx1, .y = floor_y, .z = fz0 },
-            .{ .x = fx1, .y = floor_y, .z = fz1 },
-            .{ .x = fx0, .y = floor_y, .z = fz1 },
-        };
-
-        for (floor_verts) |fv| {
-            mesh.vertices[vtx * 3 + 0] = fv.x;
-            mesh.vertices[vtx * 3 + 1] = fv.y;
-            mesh.vertices[vtx * 3 + 2] = fv.z;
-            mesh.texcoords[vtx * 2 + 0] = (fv.x - fx0) / (fx1 - fx0);
-            mesh.texcoords[vtx * 2 + 1] = (fv.z - fz0) / (fz1 - fz0);
-            mesh.normals[vtx * 3 + 0] = 0;
-            mesh.normals[vtx * 3 + 1] = 1;
-            mesh.normals[vtx * 3 + 2] = 0;
-            vtx += 1;
-        }
-
-        mesh.indices[tri * 3 + 0] = @truncate(floor_start + 0);
-        mesh.indices[tri * 3 + 1] = @truncate(floor_start + 1);
-        mesh.indices[tri * 3 + 2] = @truncate(floor_start + 2);
-        tri += 1;
-        mesh.indices[tri * 3 + 0] = @truncate(floor_start + 0);
-        mesh.indices[tri * 3 + 1] = @truncate(floor_start + 2);
-        mesh.indices[tri * 3 + 2] = @truncate(floor_start + 3);
-        tri += 1;
-
-        // -------------------------
-        // 3. Walls (loop edges)
-        // -------------------------
-        // helper inline fn
-
-        // West wall (x=0 col)
-        for (0..height - 1) |y| {
-            const top1 = self.getHeight(0, y);
-            const top2 = self.getHeight(0, y + 1);
-            const z1 = @as(f32, @floatFromInt(y)) - height_f / 2.0;
-            const z2 = @as(f32, @floatFromInt(y + 1)) - height_f / 2.0;
-            const x = -width_f / 2.0;
-            addWallQuad(.{ .x = x, .y = top1, .z = z1 }, .{ .x = x, .y = floor_y, .z = z1 }, .{ .x = x, .y = top2, .z = z2 }, .{ .x = x, .y = floor_y, .z = z2 }, .{ .x = -1, .y = 0, .z = 0 }, &mesh, &vtx, &tri);
-        }
-        // East wall (x=width-1)
-        for (0..height - 1) |y| {
-            const top1 = self.getHeight(width - 1, y);
-            const top2 = self.getHeight(width - 1, y + 1);
-            const z1 = @as(f32, @floatFromInt(y)) - height_f / 2.0;
-            const z2 = @as(f32, @floatFromInt(y + 1)) - height_f / 2.0;
-            const x = width_f / 2.0;
-            addWallQuad(.{ .x = x, .y = top1, .z = z1 }, .{ .x = x, .y = floor_y, .z = z1 }, .{ .x = x, .y = top2, .z = z2 }, .{ .x = x, .y = floor_y, .z = z2 }, .{ .x = 1, .y = 0, .z = 0 }, &mesh, &vtx, &tri);
-        }
-        // North wall (y=0 row)
-        for (0..width - 1) |x_idx| {
-            const top1 = self.getHeight(x_idx, 0);
-            const top2 = self.getHeight(x_idx + 1, 0);
-            const x1 = @as(f32, @floatFromInt(x_idx)) - width_f / 2.0;
-            const x2 = @as(f32, @floatFromInt(x_idx + 1)) - width_f / 2.0;
-            const z = -height_f / 2.0;
-            addWallQuad(.{ .x = x1, .y = top1, .z = z }, .{ .x = x1, .y = floor_y, .z = z }, .{ .x = x2, .y = top2, .z = z }, .{ .x = x2, .y = floor_y, .z = z }, .{ .x = 0, .y = 0, .z = -1 }, &mesh, &vtx, &tri);
-        }
-        // South wall (y=height-1 row)
-        for (0..width - 1) |x_idx| {
-            const top1 = self.getHeight(x_idx, height - 1);
-            const top2 = self.getHeight(x_idx + 1, height - 1);
-            const x1 = @as(f32, @floatFromInt(x_idx)) - width_f / 2.0;
-            const x2 = @as(f32, @floatFromInt(x_idx + 1)) - width_f / 2.0;
-            const z = height_f / 2.0;
-            addWallQuad(.{ .x = x1, .y = top1, .z = z }, .{ .x = x1, .y = floor_y, .z = z }, .{ .x = x2, .y = top2, .z = z }, .{ .x = x2, .y = floor_y, .z = z }, .{ .x = 0, .y = 0, .z = 1 }, &mesh, &vtx, &tri);
-        }
-
-        // -------------------------
-        // 4. Normals for surface (recalc)
-        // -------------------------
-        for (0..height) |y| {
-            for (0..width) |x| {
-                const index = y * width + x;
-
-                const x_prev = if (x > 0) x - 1 else x;
-                const x_next = if (x < width - 1) x + 1 else x;
-                const y_prev = if (y > 0) y - 1 else y;
-                const y_next = if (y < height - 1) y + 1 else y;
-
-                const height_left = self.getHeight(x_prev, y);
-                const height_right = self.getHeight(x_next, y);
-                const height_up = self.getHeight(x, y_prev);
-                const height_down = self.getHeight(x, y_next);
+                const height_left = self.getHeight(x_prev, world_y);
+                const height_right = self.getHeight(x_next, world_y);
+                const height_up = self.getHeight(world_x, y_prev);
+                const height_down = self.getHeight(world_x, y_next);
 
                 const dx = (height_right - height_left) / 2.0;
                 const dy = (height_down - height_up) / 2.0;
 
-                const normal_vec = rl.Vector3.init(-dx, 1.0, -dy).normalize();
+                const normal_vec = rl.Vector3{ .x = -dx, .y = 1.0, .z = -dy };
+                const normal = normal_vec.normalize();
 
-                mesh.normals[index * 3 + 0] = normal_vec.x;
-                mesh.normals[index * 3 + 1] = normal_vec.y;
-                mesh.normals[index * 3 + 2] = normal_vec.z;
+                mesh.normals[index * 3 + 0] = normal.x;
+                mesh.normals[index * 3 + 1] = normal.y;
+                mesh.normals[index * 3 + 2] = normal.z;
             }
         }
 
         rl.uploadMesh(&mesh, false);
-
-        std.debug.print("Vertices: {}, Triangles: {}\n", .{ mesh.vertexCount, mesh.triangleCount });
-        std.debug.print("Written vtx: {}, tri: {}\n", .{ vtx, tri });
         return mesh;
     }
 

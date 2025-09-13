@@ -50,10 +50,10 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
     errdefer self._settings_parsed.deinit();
 
     self.settings = self._settings_parsed.value;
-    if (self.settings.server.world_generation.resolution[0] * self.settings.server.world_generation.resolution[1] > 256 * 256) {
-        commons.print("Error in settings: world_generation resolution cannot be greater than 256x256\n", .{}, .red);
-        return error.TheMapIsTooMassive;
-    }
+    // if (self.settings.server.world_generation.resolution[0] * self.settings.server.world_generation.resolution[1] > 256 * 256) {
+    //     commons.print("Error in settings: world_generation resolution cannot be greater than 256x256\n", .{}, .red);
+    //     return error.TheMapIsTooMassive;
+    // }
 
     self.camera = null;
 
@@ -281,10 +281,12 @@ fn getMouseToWorld(self: *Self) ?rl.Vector3 {
     if (self.camera) |camera| {
         if (self.client) |client| {
             if (client.game_data.world_data) |world_data| {
-                if (world_data.model) |model| {
-                    const mouse_pos_ray = rl.getScreenToWorldRay(rl.getMousePosition(), camera);
-                    const mouse_world_collision = rl.getRayCollisionMesh(mouse_pos_ray, model.meshes[0], model.transform);
-                    return mouse_world_collision.point;
+                for (world_data.models) |model| {
+                    if (model) |m| {
+                        const mouse_pos_ray = rl.getScreenToWorldRay(rl.getMousePosition(), camera);
+                        const mouse_world_collision = rl.getRayCollisionMesh(mouse_pos_ray, m.meshes[0], m.transform);
+                        return mouse_world_collision.point;
+                    }
                 }
             }
         }
@@ -336,10 +338,12 @@ pub fn loop(self: *Self) !void {
                             }
                         }
 
-                        if (world_data.model) |model| {
-                            rl.drawModel(model, rl.Vector3.init(0, 0, 0), 1.0, .white);
-                        } else if (world_data.isComplete())
-                            try world_data.genModel(self.settings, self.light_shader);
+                        for (world_data.models) |model| {
+                            if (model) |m| {
+                                rl.drawModel(m, rl.Vector3.init(0, 0, 0), 1.0, .white);
+                            } else if (world_data.isComplete())
+                                try world_data.genModel(self.settings, self.light_shader);
+                        }
                     }
                 }
 
