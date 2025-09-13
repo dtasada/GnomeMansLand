@@ -284,7 +284,7 @@ pub const TextBox = struct {
         });
         var self = TextBox{
             .inner_text = try TextVariable.init(.{
-                .x = settings.x,
+                .x = label.getRight() + 16.0,
                 .y = settings.y,
                 .body = "", // gets set right after this
                 .font = settings.font orelse chalk_font,
@@ -293,6 +293,7 @@ pub const TextBox = struct {
                 .color = settings.color,
                 .anchor = settings.anchor,
             }),
+            .label = label,
             .len = settings.default_body.len,
             .max_len = settings.max_len,
             .focused = false,
