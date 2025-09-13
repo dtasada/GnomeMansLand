@@ -3,6 +3,8 @@ const std = @import("std");
 
 const commons = @import("../commons.zig");
 
+const MAX_LEN: usize = 64;
+
 const FontSize = enum(i32) {
     title = 96,
     body = 40,
@@ -26,6 +28,7 @@ pub inline fn getRight(hitbox: rl.Rectangle) f32 {
 /// Button struct.
 pub const Button = struct {
     text: Text_(false),
+    text_cstr: [MAX_LEN:0]u8,
 
     padding_x: f32,
     padding_y: f32,
@@ -61,19 +64,19 @@ pub const Button = struct {
             .padding_y = settings.padding_y,
             .hitbox = undefined,
             .hover_anim_bar_width = 0.0,
+            .text_cstr = undefined,
         };
-        self.hitbox = self.getHitbox(alloc);
+        self.hitbox = self.getHitbox();
 
         return self;
     }
 
-    pub fn getHitbox(self: *const Button, alloc: std.mem.Allocator) rl.Rectangle {
-        const cstr = commons.toSentinel(alloc, self.text.body);
-        defer alloc.free(cstr);
+    pub fn getHitbox(self: *Button) rl.Rectangle {
+        commons.toSentinel(self.text.body, &self.text_cstr);
 
         const text_dimensions = rl.measureTextEx(
             self.text.font,
-            @ptrCast(cstr),
+            &self.text_cstr,
             @floatFromInt(@intFromEnum(self.text.font_size)),
             self.text.spacing,
         );
@@ -194,6 +197,7 @@ fn Text_(M: bool) type {
         color: rl.Color,
         anchor: Anchor,
         hitbox: rl.Rectangle,
+        body_cstr: [MAX_LEN:0]u8,
 
         pub fn init(
             alloc: std.mem.Allocator,
@@ -219,6 +223,7 @@ fn Text_(M: bool) type {
                 .color = settings.color,
                 .anchor = settings.anchor,
                 .hitbox = undefined,
+                .body_cstr = undefined,
             };
             self.hitbox = self.getHitbox();
 
@@ -226,13 +231,12 @@ fn Text_(M: bool) type {
         }
 
         /// Returns hitbox for text.
-        pub fn getHitbox(self: *const Text_(M)) rl.Rectangle {
-            const cstr = commons.toSentinel(self.alloc, self.body);
-            defer self.alloc.free(cstr);
+        pub fn getHitbox(self: *Text_(M)) rl.Rectangle {
+            commons.toSentinel(self.body, &self.body_cstr);
 
             const dimensions = rl.measureTextEx(
                 self.font,
-                @ptrCast(cstr),
+                &self.body_cstr,
                 @floatFromInt(@intFromEnum(self.font_size)),
                 self.spacing,
             );
@@ -240,19 +244,18 @@ fn Text_(M: bool) type {
         }
 
         /// Draws text on the screen.
-        pub fn update(self: *const Text_(M)) void {
+        pub fn update(self: *Text_(M)) void {
             self.drawBuffer(self.body);
         }
 
         /// Actually draws the text on the screen. buf is passed to allow drawing any buffer.
         /// Kinda bs but necessary for TextBox lol
-        pub fn drawBuffer(self: *const Text_(M), buf: string_type) void {
-            const cstr = commons.toSentinel(self.alloc, buf);
-            defer self.alloc.free(cstr);
+        pub fn drawBuffer(self: *Text_(M), buf: string_type) void {
+            commons.toSentinel(buf, &self.body_cstr);
 
             rl.drawTextEx(
                 self.font,
-                @ptrCast(cstr),
+                &self.body_cstr,
                 switch (self.anchor) {
                     .topleft => .init(self.x, self.y),
                     .center => .init(self.x - self.hitbox.width / 2.0, self.y - self.hitbox.height / 2.0),
@@ -265,7 +268,7 @@ fn Text_(M: bool) type {
     };
 }
 
-/// Allocates 64 bytes. Don't forget to deinit
+/// Allocates MAX_LEN bytes. Don't forget to deinit
 pub const BoxLabel = struct {
     label: []const u8,
     max_len: usize, // input size excluding sentinel
@@ -286,6 +289,7 @@ pub const TextBox = struct {
     cursor_pos: usize, // position of caret in [0..len]
     cursor_last_blink: i64, // last time caret blink toggled
     cursor_visible: bool, // current visible state of caret
+    till_cursor_cstr: [MAX_LEN:0]u8,
 
     pub fn init(alloc: std.mem.Allocator, settings: struct {
         x: f32,
@@ -297,7 +301,7 @@ pub const TextBox = struct {
         spacing: f32 = 2.0,
         color: rl.Color = .white,
         anchor: Anchor = .topleft,
-        max_len: usize = 64,
+        max_len: usize = MAX_LEN,
     }) !TextBox {
         const label = try Text.init(alloc, .{
             .x = settings.x,
@@ -327,6 +331,7 @@ pub const TextBox = struct {
             .cursor_pos = settings.default_body.len,
             .cursor_last_blink = std.time.milliTimestamp(),
             .cursor_visible = true,
+            .till_cursor_cstr = undefined,
         };
 
         self.inner_text.body = try alloc.alloc(u8, settings.max_len + 1);
@@ -339,7 +344,7 @@ pub const TextBox = struct {
         alloc.free(self.inner_text.body);
     }
 
-    pub fn update(self: *TextBox, alloc: std.mem.Allocator) !void {
+    pub fn update(self: *TextBox) !void {
         const min_length = 96.0;
         const base_bar_len = @max(min_length, self.inner_text.hitbox.width);
 
@@ -460,13 +465,11 @@ pub const TextBox = struct {
 
         if (self.focused and self.cursor_visible) {
             // measure width of text up to cursor_pos to place caret
-            const pre_slice = self.inner_text.body[0..self.cursor_pos];
-            const cstr = commons.toSentinel(alloc, pre_slice);
-            defer alloc.free(cstr);
+            commons.toSentinel(self.inner_text.body[0..self.cursor_pos], &self.till_cursor_cstr);
 
             const pre_dim = rl.measureTextEx(
                 self.inner_text.font,
-                @ptrCast(cstr),
+                &self.till_cursor_cstr,
                 @floatFromInt(@intFromEnum(self.inner_text.font_size)),
                 self.inner_text.spacing,
             );
@@ -477,7 +480,7 @@ pub const TextBox = struct {
     }
 
     /// Returns biggest possible hitbox given the maximum length and font size
-    pub fn getShadowHitbox(self: *const TextBox) rl.Rectangle {
+    pub fn getShadowHitbox(self: *TextBox) rl.Rectangle {
         var shadow_hitbox = self.inner_text.getHitbox();
         shadow_hitbox.width = shadow_hitbox.height * @as(f32, @floatFromInt(self.max_len));
         return shadow_hitbox;
@@ -556,16 +559,16 @@ pub const TextBoxSet = struct {
     }
 
     /// Pass in references to strings. Writes sentinel at the end.
-    pub fn update(self: *const TextBoxSet, alloc: std.mem.Allocator, references: []const []u8) !void {
+    pub fn update(self: *TextBoxSet, references: []const []u8) !void {
         if (references.len != self.boxes.len) {
             commons.print("Amount of references passed to TextBoxSet.update must equal amount of labels passed in TextBoxSet.init\n", .{}, .red);
             return error.TextBoxSetNotMatching;
         }
 
-        for (self.labels) |label| label.update();
+        for (self.labels) |*label| label.update();
 
         for (references, 0..) |ref, i| {
-            try self.boxes[i].update(alloc);
+            try self.boxes[i].update();
             const len = self.boxes[i].len;
             if (len > 0 and ref.len > len) {
                 @memcpy(ref[0..len], self.boxes[i].inner_text.body[0..len]);

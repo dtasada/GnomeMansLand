@@ -354,6 +354,5 @@ pub fn loop(self: *Self) !void {
                 rl.endDrawing();
             },
         }
-        rl.drawFPS(200, 200);
     }
 }

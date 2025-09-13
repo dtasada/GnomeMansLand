@@ -3,11 +3,11 @@ const std = @import("std");
 /// Returns null-terminated string from `text`.
 /// Caller must `@ptrCast()` to cast to a `[:0]const u8`.
 /// Caller owns memory.
-pub inline fn toSentinel(alloc: std.mem.Allocator, text: []const u8) []const u8 {
-    const cstr = alloc.alloc(u8, text.len + 1) catch return "error";
-    @memcpy(cstr[0..text.len], text);
-    cstr[text.len] = 0;
-    return cstr;
+pub inline fn toSentinel(text: []const u8, buf: [:0]u8) void {
+    const n = @min(text.len, buf.len - 1);
+    @memcpy(buf[0..n], text[0..n]);
+    buf[n] = 0;
+    // return buf[0..n :0];
 }
 
 pub fn v2(T: type) type {

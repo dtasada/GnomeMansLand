@@ -21,7 +21,7 @@ fn setupRaylib() void {
 
     rl.initWindow(screenWidth, screenHeight, "Gnome Man's Land");
     rl.setExitKey(.null);
-    rl.setTargetFPS(165);
+    rl.setTargetFPS(60);
 }
 
 pub fn main() !void {

@@ -67,7 +67,7 @@ pub fn update(self: *Self, game: *Game) !void {
     self.title_text.update();
 
     self.nickname_input_label.update();
-    try self.nickname_input.update(game.alloc);
+    try self.nickname_input.update();
 
     rl.endDrawing();
 }

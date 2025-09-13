@@ -56,12 +56,10 @@ pub fn update(self: *Self, game: *Game) !void {
 
     // u16 port number can only be 5 chars, ipv4 can only be 15
 
-    var refs: [2][]u8 = [_][]u8{
+    try self.text_box_set.update(&.{
         &self.port_string_buf,
         &self.max_players_string_buf,
-    };
-
-    try self.text_box_set.update(game.alloc, &refs);
+    });
     try self.button_set.update(.{
         .{ states.hostServer, .{game} },
         .{ states.openLobby, .{game} },
@@ -71,8 +69,8 @@ pub fn update(self: *Self, game: *Game) !void {
     const len = std.mem.indexOf(u8, &self.port_string_buf, &[_]u8{0}) orelse 0;
     if (len != 0) {
         game.settings.multiplayer.server_port = std.fmt.parseUnsigned(u16, @ptrCast(self.port_string_buf[0..len]), 10) catch def: {
-            const port_box = self.text_box_set.boxes[1];
-            const error_text = try ui.Text.init(game.alloc, .{
+            var port_box = self.text_box_set.boxes[1];
+            var error_text = try ui.Text.init(game.alloc, .{
                 .body = "not a valid number!",
                 .x = port_box.inner_text.hitbox.x + port_box.getShadowHitbox().width,
                 .y = port_box.inner_text.hitbox.y,
