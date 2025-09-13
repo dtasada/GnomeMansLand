@@ -57,7 +57,7 @@ pub fn update(self: *Self, game: *Game) !void {
         &self.server_port_string_buf,
     };
 
-    try self.text_box_set.update(&refs);
+    try self.text_box_set.update(game.alloc, &refs);
     try self.button_set.update(.{
         .{ states.openGame, .{game} },
         .{ states.openLobby, .{game} },
@@ -68,7 +68,7 @@ pub fn update(self: *Self, game: *Game) !void {
     if (len != 0) {
         game.settings.multiplayer.server_port = std.fmt.parseUnsigned(u16, @ptrCast(self.server_port_string_buf[0..len]), 10) catch def: {
             const port_box = self.text_box_set.boxes[1];
-            const error_text = try ui.Text.init(.{
+            const error_text = try ui.Text.init(game.alloc, .{
                 .body = "not a valid number!",
                 .x = port_box.inner_text.hitbox.x + port_box.getShadowHitbox().width,
                 .y = port_box.inner_text.hitbox.y,

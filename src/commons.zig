@@ -1,7 +1,13 @@
 const std = @import("std");
 
-pub inline fn getCString(text: []const u8) [:0]const u8 {
-    return @ptrCast(text.ptr[0..text.len :0]);
+/// Returns null-terminated string from `text`.
+/// Caller must `@ptrCast()` to cast to a `[:0]const u8`.
+/// Caller owns memory.
+pub inline fn toSentinel(alloc: std.mem.Allocator, text: []const u8) []const u8 {
+    const cstr = alloc.alloc(u8, text.len + 1) catch return "error";
+    @memcpy(cstr[0..text.len], text);
+    cstr[text.len] = 0;
+    return cstr;
 }
 
 pub fn v2(T: type) type {
