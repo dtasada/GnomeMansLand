@@ -168,41 +168,60 @@ pub const WorldData = struct {
         const width = self.size.x;
         const height = self.size.y;
 
-        const vertex_count = width * height;
-        const triangle_count = (width - 1) * (height - 1) * 2;
+        const surface_vertex_count = width * height;
+        const surface_triangle_count = (width - 1) * (height - 1) * 2;
 
-        mesh.vertexCount = @intCast(vertex_count);
-        mesh.triangleCount = @intCast(triangle_count);
+        // Floor: 4 verts, 2 triangles
+        const floor_vertex_count = 4;
+        const floor_triangle_count = 2;
 
-        mesh.vertices = @ptrCast(@alignCast(c.malloc(vertex_count * 3 * @sizeOf(f32))));
-        mesh.normals = @ptrCast(@alignCast(c.malloc(vertex_count * 3 * @sizeOf(f32))));
-        mesh.texcoords = @ptrCast(@alignCast(c.malloc(vertex_count * 2 * @sizeOf(f32))));
-        mesh.indices = @ptrCast(@alignCast(c.malloc(triangle_count * 3 * @sizeOf(u16))));
+        // Walls: each edge has (N-1) quads = 2*(N-1) triangles, 4*(N-1) verts
+        const wall_quads = (width - 1) * 2 + (height - 1) * 2;
+        const wall_vertex_count = wall_quads * 4;
+        const wall_triangle_count = wall_quads * 2;
+
+        const total_vertex_count = surface_vertex_count + floor_vertex_count + wall_vertex_count;
+        const total_triangle_count = surface_triangle_count + floor_triangle_count + wall_triangle_count;
+
+        mesh.vertexCount = @intCast(total_vertex_count);
+        mesh.triangleCount = @intCast(total_triangle_count);
+
+        mesh.vertices = @ptrCast(@alignCast(c.malloc(total_vertex_count * 3 * @sizeOf(f32))));
+        mesh.normals = @ptrCast(@alignCast(c.malloc(total_vertex_count * 3 * @sizeOf(f32))));
+        mesh.texcoords = @ptrCast(@alignCast(c.malloc(total_vertex_count * 2 * @sizeOf(f32))));
+        mesh.indices = @ptrCast(@alignCast(c.malloc(total_triangle_count * 3 * @sizeOf(u16))));
 
         if (mesh.vertices == null or mesh.normals == null or
             mesh.texcoords == null or mesh.indices == null)
             return error.OutOfMemory;
 
+        const width_f: f32 = @floatFromInt(width);
+        const height_f: f32 = @floatFromInt(height);
+        const floor_y: f32 = -100.0;
+
+        var vtx: usize = 0;
+        var tri: usize = 0;
+
+        // -------------------------
+        // 1. Terrain surface verts
+        // -------------------------
         for (0..height) |y| {
             for (0..width) |x| {
-                const index = y * width + x;
+                // const index = y * width + x;
                 const noise_value = self.getHeight(x, y);
 
-                const x_f = @as(f32, @floatFromInt(x));
-                const y_f = @as(f32, @floatFromInt(y));
-                const width_f = @as(f32, @floatFromInt(width));
-                const height_f = @as(f32, @floatFromInt(height));
+                mesh.vertices[vtx * 3 + 0] = @as(f32, @floatFromInt(x)) - width_f / 2.0;
+                mesh.vertices[vtx * 3 + 1] = noise_value;
+                mesh.vertices[vtx * 3 + 2] = @as(f32, @floatFromInt(y)) - height_f / 2.0;
 
-                mesh.vertices[index * 3 + 0] = x_f - width_f / 2.0;
-                mesh.vertices[index * 3 + 1] = noise_value;
-                mesh.vertices[index * 3 + 2] = y_f - height_f / 2.0;
+                mesh.texcoords[vtx * 2 + 0] = @as(f32, @floatFromInt(x)) / (width_f - 1);
+                mesh.texcoords[vtx * 2 + 1] = @as(f32, @floatFromInt(y)) / (height_f - 1);
 
-                mesh.texcoords[index * 2 + 0] = @as(f32, @floatFromInt(x)) / @as(f32, @floatFromInt(width - 1));
-                mesh.texcoords[index * 2 + 1] = @as(f32, @floatFromInt(y)) / @as(f32, @floatFromInt(height - 1));
+                vtx += 1;
             }
         }
 
-        var triangle_index: usize = 0;
+        // Surface indices
         for (0..height - 1) |y| {
             for (0..width - 1) |x| {
                 const top_left = y * width + x;
@@ -210,23 +229,105 @@ pub const WorldData = struct {
                 const bottom_left = (y + 1) * width + x;
                 const bottom_right = bottom_left + 1;
 
-                mesh.indices[triangle_index * 3 + 0] = @intCast(top_left);
-                mesh.indices[triangle_index * 3 + 1] = @intCast(bottom_left);
-                mesh.indices[triangle_index * 3 + 2] = @intCast(top_right);
-                triangle_index += 1;
+                mesh.indices[tri * 3 + 0] = @intCast(top_left);
+                mesh.indices[tri * 3 + 1] = @intCast(bottom_left);
+                mesh.indices[tri * 3 + 2] = @intCast(top_right);
+                tri += 1;
 
-                mesh.indices[triangle_index * 3 + 0] = @intCast(top_right);
-                mesh.indices[triangle_index * 3 + 1] = @intCast(bottom_left);
-                mesh.indices[triangle_index * 3 + 2] = @intCast(bottom_right);
-                triangle_index += 1;
+                mesh.indices[tri * 3 + 0] = @intCast(top_right);
+                mesh.indices[tri * 3 + 1] = @intCast(bottom_left);
+                mesh.indices[tri * 3 + 2] = @intCast(bottom_right);
+                tri += 1;
             }
         }
 
+        // -------------------------
+        // 2. Floor
+        // -------------------------
+        const floor_start = vtx;
+
+        const fx0: f32 = -width_f / 2.0;
+        const fx1: f32 = width_f / 2.0;
+        const fz0: f32 = -height_f / 2.0;
+        const fz1: f32 = height_f / 2.0;
+
+        const floor_verts = [_]rl.Vector3{
+            .{ .x = fx0, .y = floor_y, .z = fz0 },
+            .{ .x = fx1, .y = floor_y, .z = fz0 },
+            .{ .x = fx1, .y = floor_y, .z = fz1 },
+            .{ .x = fx0, .y = floor_y, .z = fz1 },
+        };
+
+        for (floor_verts) |fv| {
+            mesh.vertices[vtx * 3 + 0] = fv.x;
+            mesh.vertices[vtx * 3 + 1] = fv.y;
+            mesh.vertices[vtx * 3 + 2] = fv.z;
+            mesh.texcoords[vtx * 2 + 0] = (fv.x - fx0) / (fx1 - fx0);
+            mesh.texcoords[vtx * 2 + 1] = (fv.z - fz0) / (fz1 - fz0);
+            mesh.normals[vtx * 3 + 0] = 0;
+            mesh.normals[vtx * 3 + 1] = 1;
+            mesh.normals[vtx * 3 + 2] = 0;
+            vtx += 1;
+        }
+
+        mesh.indices[tri * 3 + 0] = @truncate(floor_start + 0);
+        mesh.indices[tri * 3 + 1] = @truncate(floor_start + 1);
+        mesh.indices[tri * 3 + 2] = @truncate(floor_start + 2);
+        tri += 1;
+        mesh.indices[tri * 3 + 0] = @truncate(floor_start + 0);
+        mesh.indices[tri * 3 + 1] = @truncate(floor_start + 2);
+        mesh.indices[tri * 3 + 2] = @truncate(floor_start + 3);
+        tri += 1;
+
+        // -------------------------
+        // 3. Walls (loop edges)
+        // -------------------------
+        // helper inline fn
+
+        // West wall (x=0 col)
+        for (0..height - 1) |y| {
+            const top1 = self.getHeight(0, y);
+            const top2 = self.getHeight(0, y + 1);
+            const z1 = @as(f32, @floatFromInt(y)) - height_f / 2.0;
+            const z2 = @as(f32, @floatFromInt(y + 1)) - height_f / 2.0;
+            const x = -width_f / 2.0;
+            addWallQuad(.{ .x = x, .y = top1, .z = z1 }, .{ .x = x, .y = floor_y, .z = z1 }, .{ .x = x, .y = top2, .z = z2 }, .{ .x = x, .y = floor_y, .z = z2 }, .{ .x = -1, .y = 0, .z = 0 }, &mesh, &vtx, &tri);
+        }
+        // East wall (x=width-1)
+        for (0..height - 1) |y| {
+            const top1 = self.getHeight(width - 1, y);
+            const top2 = self.getHeight(width - 1, y + 1);
+            const z1 = @as(f32, @floatFromInt(y)) - height_f / 2.0;
+            const z2 = @as(f32, @floatFromInt(y + 1)) - height_f / 2.0;
+            const x = width_f / 2.0;
+            addWallQuad(.{ .x = x, .y = top1, .z = z1 }, .{ .x = x, .y = floor_y, .z = z1 }, .{ .x = x, .y = top2, .z = z2 }, .{ .x = x, .y = floor_y, .z = z2 }, .{ .x = 1, .y = 0, .z = 0 }, &mesh, &vtx, &tri);
+        }
+        // North wall (y=0 row)
+        for (0..width - 1) |x_idx| {
+            const top1 = self.getHeight(x_idx, 0);
+            const top2 = self.getHeight(x_idx + 1, 0);
+            const x1 = @as(f32, @floatFromInt(x_idx)) - width_f / 2.0;
+            const x2 = @as(f32, @floatFromInt(x_idx + 1)) - width_f / 2.0;
+            const z = -height_f / 2.0;
+            addWallQuad(.{ .x = x1, .y = top1, .z = z }, .{ .x = x1, .y = floor_y, .z = z }, .{ .x = x2, .y = top2, .z = z }, .{ .x = x2, .y = floor_y, .z = z }, .{ .x = 0, .y = 0, .z = -1 }, &mesh, &vtx, &tri);
+        }
+        // South wall (y=height-1 row)
+        for (0..width - 1) |x_idx| {
+            const top1 = self.getHeight(x_idx, height - 1);
+            const top2 = self.getHeight(x_idx + 1, height - 1);
+            const x1 = @as(f32, @floatFromInt(x_idx)) - width_f / 2.0;
+            const x2 = @as(f32, @floatFromInt(x_idx + 1)) - width_f / 2.0;
+            const z = height_f / 2.0;
+            addWallQuad(.{ .x = x1, .y = top1, .z = z }, .{ .x = x1, .y = floor_y, .z = z }, .{ .x = x2, .y = top2, .z = z }, .{ .x = x2, .y = floor_y, .z = z }, .{ .x = 0, .y = 0, .z = 1 }, &mesh, &vtx, &tri);
+        }
+
+        // -------------------------
+        // 4. Normals for surface (recalc)
+        // -------------------------
         for (0..height) |y| {
             for (0..width) |x| {
                 const index = y * width + x;
 
-                // Get neighboring heights for gradient calculation
                 const x_prev = if (x > 0) x - 1 else x;
                 const x_next = if (x < width - 1) x + 1 else x;
                 const y_prev = if (y > 0) y - 1 else y;
@@ -237,23 +338,56 @@ pub const WorldData = struct {
                 const height_up = self.getHeight(x, y_prev);
                 const height_down = self.getHeight(x, y_next);
 
-                // Calculate gradients using finite differences
                 const dx = (height_right - height_left) / 2.0;
                 const dy = (height_down - height_up) / 2.0;
 
-                // Normal vector is (-dx, 1, -dy) normalized
-                const normal_vec = rl.Vector3{ .x = -dx, .y = 1.0, .z = -dy };
-                const normal = normal_vec.normalize();
+                const normal_vec = rl.Vector3.init(-dx, 1.0, -dy).normalize();
 
-                mesh.normals[index * 3 + 0] = normal.x;
-                mesh.normals[index * 3 + 1] = normal.y;
-                mesh.normals[index * 3 + 2] = normal.z;
+                mesh.normals[index * 3 + 0] = normal_vec.x;
+                mesh.normals[index * 3 + 1] = normal_vec.y;
+                mesh.normals[index * 3 + 2] = normal_vec.z;
             }
         }
 
         rl.uploadMesh(&mesh, false);
 
+        std.debug.print("Vertices: {}, Triangles: {}\n", .{ mesh.vertexCount, mesh.triangleCount });
+        std.debug.print("Written vtx: {}, tri: {}\n", .{ vtx, tri });
         return mesh;
+    }
+
+    inline fn addWallQuad(
+        a_top: rl.Vector3,
+        a_bot: rl.Vector3,
+        b_top: rl.Vector3,
+        b_bot: rl.Vector3,
+        normal: rl.Vector3,
+        mesh: *rl.Mesh,
+        vtx: *usize,
+        tri: *usize,
+    ) void {
+        const start = vtx.*;
+        const verts = [_]rl.Vector3{ a_top, a_bot, b_top, b_bot };
+        for (verts) |v| {
+            mesh.vertices[vtx.* * 3 + 0] = v.x;
+            mesh.vertices[vtx.* * 3 + 1] = v.y;
+            mesh.vertices[vtx.* * 3 + 2] = v.z;
+            mesh.texcoords[vtx.* * 2 + 0] = 0; // simple
+            mesh.texcoords[vtx.* * 2 + 1] = 0;
+            mesh.normals[vtx.* * 3 + 0] = normal.x;
+            mesh.normals[vtx.* * 3 + 1] = normal.y;
+            mesh.normals[vtx.* * 3 + 2] = normal.z;
+            vtx.* += 1;
+        }
+        // two triangles
+        mesh.indices[tri.* * 3 + 0] = @truncate(start + 0);
+        mesh.indices[tri.* * 3 + 1] = @truncate(start + 1);
+        mesh.indices[tri.* * 3 + 2] = @truncate(start + 2);
+        tri.* += 1;
+        mesh.indices[tri.* * 3 + 0] = @truncate(start + 2);
+        mesh.indices[tri.* * 3 + 1] = @truncate(start + 1);
+        mesh.indices[tri.* * 3 + 2] = @truncate(start + 3);
+        tri.* += 1;
     }
 
     pub fn getHeight(self: *const WorldData, x: usize, y: usize) f32 {
