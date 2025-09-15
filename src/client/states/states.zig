@@ -45,12 +45,33 @@ pub fn openGame(game: *Game) void {
 pub fn hostServer(game: *Game) !void {
     if (game.server) |server| server.deinit(game.alloc);
 
-    game.server = Server.init(game.alloc, game.settings.server) catch null;
+    game.server = Server.init(game.alloc, game.settings.server) catch return;
 
     if (game.server) |_| {
-        if (game.client) |_|
-            game.state = .game
-        else
-            openGame(game);
+        const wait_for_server_thread = try std.Thread.spawn(.{}, waitForServer, .{game});
+        wait_for_server_thread.detach();
+    }
+}
+
+fn waitForServer(game: *Game) !void {
+    var chunk_thread: ?std.Thread = null;
+    if (game.server) |server| {
+        while (true) {
+            if (server.game_data.world_data.finished_generating.load(.monotonic)) {
+                if (chunk_thread == null) chunk_thread = try socket_packet.WorldDataChunk.init(
+                    server.alloc,
+                    &server.game_data.world_data,
+                    server.socket_packets.world_data_chunks,
+                );
+
+                if (server.game_data.world_data.network_chunks_ready.load(.monotonic)) {
+                    if (chunk_thread) |t| t.join();
+                    openGame(game);
+                    return;
+                }
+            }
+
+            std.Thread.sleep(200 * std.time.ns_per_ms);
+        }
     }
 }

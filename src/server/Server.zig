@@ -23,7 +23,7 @@ game_data: ServerGameData,
 settings: ServerSettings,
 
 socket_packets: struct {
-    world_data_chunks: []socket_packet.WorldDataChunk,
+    world_data_chunks: []?socket_packet.WorldDataChunk,
 },
 
 const Client = struct {
@@ -141,12 +141,13 @@ fn handleMessage(self: *Self, client: *Client, message: []u8) !void {
                         try self.appendPlayer(request_parsed.value);
 
                         // Send world data to the client
-                        for (self.socket_packets.world_data_chunks) |chunk| {
-                            const world_data_string = try std.json.Stringify.valueAlloc(self.alloc, chunk, .{});
-                            defer self.alloc.free(world_data_string);
+                        if (self.game_data.world_data.network_chunks_ready.load(.monotonic))
+                            for (self.socket_packets.world_data_chunks) |chunk| if (chunk) |c| {
+                                const world_data_string = try std.json.Stringify.valueAlloc(self.alloc, c, .{});
+                                defer self.alloc.free(world_data_string);
 
-                            try client.send(self.alloc, world_data_string);
-                        }
+                                try client.send(self.alloc, world_data_string);
+                            };
                     } else if (std.mem.eql(u8, descriptor, "resend_request")) {
                         const request_parsed = try std.json.parseFromValue(
                             socket_packet.ResendRequest,
@@ -162,11 +163,12 @@ fn handleMessage(self: *Self, client: *Client, message: []u8) !void {
                             split.index = 1;
                             const chunk_index = try std.fmt.parseInt(u32, split.next().?, 10);
 
-                            const chunk = self.socket_packets.world_data_chunks[chunk_index];
-                            const world_data_string = try std.json.Stringify.valueAlloc(self.alloc, chunk, .{});
-                            defer self.alloc.free(world_data_string);
+                            if (self.socket_packets.world_data_chunks[chunk_index]) |chunk| {
+                                const world_data_string = try std.json.Stringify.valueAlloc(self.alloc, chunk, .{});
+                                defer self.alloc.free(world_data_string);
 
-                            try client.send(self.alloc, world_data_string);
+                                try client.send(self.alloc, world_data_string);
+                            }
                         }
                     } else if (std.mem.eql(u8, descriptor, "move_player")) {
                         const request_parsed = try std.json.parseFromValue(socket_packet.MovePlayer, self.alloc, message_root, .{});
@@ -181,6 +183,7 @@ fn handleMessage(self: *Self, client: *Client, message: []u8) !void {
     }
 }
 
+/// `game_data` and `socket_packets.world_data_chunks` are populated asynchronously
 pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     var self: *Self = try alloc.create(Self);
 
@@ -188,12 +191,23 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     self.alloc = self._gpa.allocator();
     self.settings = settings;
     self.clients = try std.ArrayList(*Client).initCapacity(self.alloc, self.settings.max_players);
+    errdefer self.clients.deinit(self.alloc);
+
     self.game_data = try ServerGameData.init(self.alloc, self.settings);
     errdefer self.game_data.deinit(self.alloc);
 
     self.socket_packets = .{
-        .world_data_chunks = try socket_packet.WorldDataChunk.init(self.alloc, self.game_data.world_data),
+        .world_data_chunks = try self.alloc.alloc(
+            ?socket_packet.WorldDataChunk,
+            @divFloor(
+                self.game_data.world_data.height_map.len,
+                socket_packet.WorldDataChunk.FLOATS_PER_CHUNK,
+            ) + @intFromBool(self.game_data.world_data.height_map.len %
+                socket_packet.WorldDataChunk.FLOATS_PER_CHUNK != 0),
+        ),
     };
+    errdefer alloc.free(self.socket_packets.world_data_chunks);
+    @memset(self.socket_packets.world_data_chunks, null);
 
     polling_rate = self.settings.polling_rate;
 
@@ -220,8 +234,8 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
-    for (self.socket_packets.world_data_chunks) |chunk|
-        self.alloc.free(chunk.descriptor);
+    for (self.socket_packets.world_data_chunks) |chunk| if (chunk) |c|
+        self.alloc.free(c.descriptor);
 
     self.alloc.free(self.socket_packets.world_data_chunks);
 

@@ -13,6 +13,12 @@ pub const ClientConnect = struct {
 };
 
 pub const WorldDataChunk = struct {
+    const MAX_SIZE_BYTES: usize = 1024;
+    const JSON_FLOAT_SIZE: usize = 20;
+    const JSON_OVERHEAD: usize = 200;
+    const AVAILABLE_BYTES_FOR_DATA: usize = MAX_SIZE_BYTES - JSON_OVERHEAD;
+    pub const FLOATS_PER_CHUNK = @divFloor(AVAILABLE_BYTES_FOR_DATA, JSON_FLOAT_SIZE);
+
     descriptor: []const u8,
     chunk_index: u32,
     float_start_index: u32,
@@ -20,35 +26,73 @@ pub const WorldDataChunk = struct {
     total_size: commons.v2u,
     height_map: []f32, // 2d in practice
 
-    /// Caller is responsible for memory cleanup
-    pub fn init(alloc: std.mem.Allocator, server_world_data: ServerGameData.WorldData) ![]WorldDataChunk {
-        const MAX_SIZE_BYTES = 1024; // techincal limit should be 64KB but it's unstable for some reason so 1024 it is
-        const JSON_FLOAT_SIZE = 20;
-        const JSON_OVERHEAD = 200;
+    /// Asynchronoulsy populates `world_data_chunks`
+    pub fn init(
+        alloc: std.mem.Allocator,
+        server_world_data: *ServerGameData.WorldData,
+        world_data_chunks: []?WorldDataChunk,
+    ) !std.Thread {
+        return try std.Thread.spawn(.{}, genChunks, .{
+            alloc,
+            world_data_chunks,
+            server_world_data,
+            world_data_chunks.len,
+        });
+    }
 
-        const available_bytes_for_data = MAX_SIZE_BYTES - JSON_OVERHEAD;
+    /// blocking. populates `world_data_chunks` in parallel.
+    fn genChunks(
+        alloc: std.mem.Allocator,
+        world_data_chunks: []?WorldDataChunk,
+        server_world_data: *ServerGameData.WorldData,
+        amount_of_chunks: usize,
+    ) !void {
+        var pool: std.Thread.Pool = undefined;
+        try pool.init(.{ .allocator = alloc, .n_jobs = 10 });
+        defer pool.deinit();
 
-        const floats_per_chunk = @divFloor(available_bytes_for_data, JSON_FLOAT_SIZE);
-        const total_floats = server_world_data.height_map.len;
-        const amount_of_chunks = @divFloor(total_floats, floats_per_chunk) +
-            (if (total_floats % floats_per_chunk == 0) @as(u32, 0) else @as(u32, 1));
-
-        var chunks = try alloc.alloc(WorldDataChunk, amount_of_chunks);
-
+        var wg: std.Thread.WaitGroup = .{};
+        var amount_of_chunks_ready = std.atomic.Value(usize).init(0);
         for (0..amount_of_chunks) |i| {
-            const start_idx = i * floats_per_chunk;
-            const end_idx = @min(start_idx + floats_per_chunk, total_floats);
-
-            chunks[i] = WorldDataChunk{
-                .descriptor = try std.fmt.allocPrint(alloc, "world_data_chunk-{}", .{i}),
-                .chunk_index = @intCast(i),
-                .float_start_index = @intCast(start_idx),
-                .float_end_index = @intCast(end_idx),
-                .total_size = server_world_data.size,
-                .height_map = server_world_data.height_map[start_idx..end_idx],
-            };
+            pool.spawnWg(&wg, genChunk, .{
+                alloc,
+                i,
+                amount_of_chunks,
+                world_data_chunks,
+                server_world_data,
+                &amount_of_chunks_ready,
+            });
         }
-        return chunks;
+
+        wg.wait();
+    }
+
+    fn genChunk(
+        alloc: std.mem.Allocator,
+        i: usize,
+        amount_of_chunks: usize,
+        chunks: []?WorldDataChunk,
+        server_world_data: *ServerGameData.WorldData,
+        amount_of_chunks_ready: *std.atomic.Value(usize),
+    ) void {
+        const start_idx = i * FLOATS_PER_CHUNK;
+        const end_idx = @min(start_idx + FLOATS_PER_CHUNK, server_world_data.height_map.len);
+
+        chunks[i] = WorldDataChunk{
+            .descriptor = std.fmt.allocPrint(alloc, "world_data_chunk-{}", .{i}) catch |err| {
+                commons.print("Couldn't create world_data_chunk-{{}} descriptor: {}\n", .{err}, .red);
+                return;
+            },
+            .chunk_index = @intCast(i),
+            .float_start_index = @intCast(start_idx),
+            .float_end_index = @intCast(end_idx),
+            .total_size = server_world_data.size,
+            .height_map = server_world_data.height_map[start_idx..end_idx],
+        };
+
+        amount_of_chunks_ready.store(amount_of_chunks_ready.load(.monotonic) + 1, .monotonic);
+        if (amount_of_chunks_ready.load(.monotonic) == amount_of_chunks)
+            server_world_data.network_chunks_ready.store(true, .monotonic);
     }
 };
 

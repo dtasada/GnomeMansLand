@@ -49,12 +49,17 @@ pub const Player = struct {
 pub const WorldData = struct {
     height_map: []f32, // 2d in practice
     size: commons.v2u,
+    finished_generating: std.atomic.Value(bool),
+    network_chunks_ready: std.atomic.Value(bool),
 
+    /// starts genTerrainData thread
     pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !WorldData {
         const x, const y = settings.world_generation.resolution;
         var self: WorldData = .{
             .size = .{ .x = x, .y = y },
             .height_map = try alloc.alloc(f32, x * y),
+            .finished_generating = std.atomic.Value(bool).init(false),
+            .network_chunks_ready = std.atomic.Value(bool).init(false),
         };
         errdefer alloc.free(self.height_map);
 
@@ -67,6 +72,7 @@ pub const WorldData = struct {
         alloc.free(self.height_map);
     }
 
+    /// Asynchronously populates `world_data.height_map`
     fn genTerrainData(self: *WorldData, alloc: std.mem.Allocator, settings: ServerSettings) !void {
         const seed: u32 = settings.world_generation.seed orelse rand: {
             var seed: u32 = undefined;
@@ -82,10 +88,19 @@ pub const WorldData = struct {
         try pool.init(.{ .allocator = alloc, .n_jobs = self.size.y });
         defer pool.deinit();
 
-        for (0..self.size.y) |y| try pool.spawn(genTerrainDataLoop, .{ self, &settings, &pn, y });
+        var amount_of_chunks_completed = std.atomic.Value(usize).init(0);
+        for (0..self.size.y) |y| {
+            try pool.spawn(genTerrainDataLoop, .{ self, &settings, &pn, y, &amount_of_chunks_completed });
+        }
     }
 
-    fn genTerrainDataLoop(self: *WorldData, settings: *const ServerSettings, pn: *Perlin, y: usize) void {
+    fn genTerrainDataLoop(
+        self: *WorldData,
+        settings: *const ServerSettings,
+        pn: *const Perlin,
+        y: usize,
+        amount_completed: *std.atomic.Value(usize),
+    ) void {
         for (0..self.size.x) |x| {
             var freq = 7.68 * settings.world_generation.frequency / @as(f32, @floatFromInt(self.size.x));
             var height: f32 = 0.0;
@@ -107,5 +122,8 @@ pub const WorldData = struct {
 
             self.height_map[y * self.size.x + x] = height;
         }
+
+        amount_completed.store(amount_completed.load(.monotonic) + 1, .monotonic);
+        if (amount_completed.load(.monotonic) == self.size.y) self.finished_generating.store(true, .monotonic);
     }
 };
