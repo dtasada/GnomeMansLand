@@ -43,7 +43,7 @@ const Client = struct {
                     std.Thread.sleep(polling_rate * std.time.ns_per_ms);
                     continue;
                 },
-                error.ConnectionResetByPeer, error.BrokenPipe => return err, // caller decides to stop
+                error.ConnectionResetByPeer, error.BrokenPipe => break, // caller decides to stop
                 else => return err,
             };
             break;

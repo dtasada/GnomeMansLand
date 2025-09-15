@@ -50,10 +50,6 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
     errdefer self._settings_parsed.deinit();
 
     self.settings = self._settings_parsed.value;
-    // if (self.settings.server.world_generation.resolution[0] * self.settings.server.world_generation.resolution[1] > 256 * 256) {
-    //     commons.print("Error in settings: world_generation resolution cannot be greater than 256x256\n", .{}, .red);
-    //     return error.TheMapIsTooMassive;
-    // }
 
     self.camera = null;
 
@@ -180,19 +176,18 @@ fn parseSettings(alloc: std.mem.Allocator) !std.json.Parsed(Settings) {
 fn resetCamera(self: *Self) void {
     if (self.client) |client| {
         if (client.game_data.world_data) |world_data| {
+            // Use more reasonable camera positioning to avoid precision issues
+            const center_x = @as(f32, @floatFromInt(world_data.size.x)) * 0.5;
+            const center_z = @as(f32, @floatFromInt(world_data.size.y)) * 0.5;
+            const camera_height = @as(f32, @floatFromInt(@max(world_data.size.x, world_data.size.y))); // Adjust height based on map size
+
+            rcamera.MAX_FOV = camera_height * 2.0;
+
             self.camera = .{
-                .fovy = 100,
-                .position = rl.Vector3.init(
-                    @as(f32, @floatFromInt(world_data.size.x)) + @as(f32, @floatFromInt(world_data.size.x)) * 0.5,
-                    @as(f32, @floatFromInt(world_data.size.x)) + @as(f32, @floatFromInt(world_data.size.x)) * 0.5,
-                    @as(f32, @floatFromInt(world_data.size.x)) + @as(f32, @floatFromInt(world_data.size.y)) * 0.5,
-                ),
+                .fovy = rcamera.MAX_FOV,
+                .position = rl.Vector3.init(center_x, camera_height, center_z + camera_height * 0.5),
                 .projection = .orthographic,
-                .target = rl.Vector3.init(
-                    @as(f32, @floatFromInt(world_data.size.x)) * 0.5,
-                    0.0,
-                    @as(f32, @floatFromInt(world_data.size.y)) * 0.5,
-                ),
+                .target = rl.Vector3.init(center_x, 0.0, center_z),
                 .up = rl.Vector3.init(0, 1, 0),
             };
         }
@@ -274,6 +269,25 @@ fn drawUi(self: *Self) void {
     }), 12, 32, 24, .white);
 
     rl.drawText(rl.textFormat("FPS: %d", .{rl.getFPS()}), 12, 52, 24, .white);
+
+    // Add world data debugging
+    if (self.client) |client| {
+        if (client.game_data.world_data) |world_data| {
+            rl.drawText(rl.textFormat("World: %dx%d, Complete: %d", .{
+                world_data.size.x,
+                world_data.size.y,
+                @as(i32, if (world_data.isComplete()) 1 else 0),
+            }), 12, 72, 24, .white);
+
+            const chunks_total = world_data.models.len;
+            var chunks_loaded: u32 = 0;
+            for (world_data.models) |model| {
+                if (model != null) chunks_loaded += 1;
+            }
+
+            rl.drawText(rl.textFormat("Chunks: %d/%d loaded", .{ chunks_loaded, chunks_total }), 12, 112, 24, .white);
+        }
+    }
 }
 
 /// gets equivalent in-world position from 2d cursor position
@@ -328,6 +342,7 @@ pub fn loop(self: *Self) !void {
                         if (self.camera == null)
                             self.resetCamera();
 
+                        // Draw players
                         for (client.game_data.players.items) |player| {
                             if (player.position) |pos| {
                                 rl.drawCube(rl.Vector3.init(
@@ -338,11 +353,14 @@ pub fn loop(self: *Self) !void {
                             }
                         }
 
-                        for (world_data.models) |model| {
+                        // Enhanced model rendering with debugging
+                        for (world_data.models, 0..) |model, i| {
                             if (model) |m| {
-                                rl.drawModel(m, rl.Vector3.init(0, 0, 0), 1.0, .white);
+                                rl.drawModel(m, .zero(), 1.0, .white);
                             } else if (world_data.isComplete())
-                                try world_data.genModel(self.settings, self.light_shader);
+                                world_data.genModel(self.settings, self.light_shader) catch |err| {
+                                    commons.print("Failed to generate model {}: {}", .{ i, err }, .red);
+                                };
                         }
                     }
                 }

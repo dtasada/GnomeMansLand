@@ -19,6 +19,7 @@ fn setupRaylib() void {
         .msaa_4x_hint = true,
     });
 
+    rl.setTraceLogLevel(.warning);
     rl.initWindow(screenWidth, screenHeight, "Gnome Man's Land");
     rl.setExitKey(.null);
     rl.setTargetFPS(60);

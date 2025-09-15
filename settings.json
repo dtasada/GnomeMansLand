@@ -17,15 +17,15 @@
         "polling_rate": 10,
         "world_generation": {
             "resolution": [
-                512,
-                512
+                2048,
+                2048
             ],
             "seed": null,
             "octaves": 15,
             "persistence": 0.5,
             "lacunarity": 2,
             "frequency": 0.25,
-            "amplitude": 45
+            "amplitude": 180
         }
     }
 }

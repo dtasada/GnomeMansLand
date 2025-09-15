@@ -13,7 +13,8 @@ const Player = @import("../server/GameData.zig").Player;
 
 const GameData = @This();
 
-const MODEL_RESOLUTION = 64;
+// Reduced model resolution for larger maps
+const MODEL_RESOLUTION = 32; // Reduced from 64
 
 world_data: ?WorldData,
 players: std.ArrayList(Player),
@@ -37,6 +38,8 @@ pub const WorldData = struct {
     _height_map_filled: usize,
     size: commons.v2u,
     models: []?rl.Model,
+    // Add model generation tracking
+    models_generated: usize,
 
     const Rgb = struct {
         r: i16,
@@ -56,7 +59,6 @@ pub const WorldData = struct {
         }
 
         pub fn scale(lhs: Rgb, m: f32) Rgb {
-            // if (m < 0.0) std.debug.panic("Rgb.scale multiplier < 0.0: mult={}\n", .{m});
             const m_ = if (m >= 0) m else 0;
             return Rgb.init(
                 @intFromFloat(@as(f32, @floatFromInt(lhs.r)) * m_),
@@ -66,7 +68,7 @@ pub const WorldData = struct {
         }
 
         pub fn lerp(lhs: Rgb, rhs: Rgb, m: f32) Rgb {
-            return lhs.add(rhs.subtract(lhs).scale(m)); // c1+(c2-c1)*m
+            return lhs.add(rhs.subtract(lhs).scale(m));
         }
     };
 
@@ -94,11 +96,17 @@ pub const WorldData = struct {
         const chunks_y = (first_packet.total_size.y + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
         const amount_of_models = chunks_x * chunks_y;
 
+        // Add safety check for too many models
+        if (amount_of_models > 2048) {
+            commons.print("Warning: {} models requested, this may cause performance issues\n", .{amount_of_models}, .yellow);
+        }
+
         var self = WorldData{
             .size = first_packet.total_size,
             .height_map = try alloc.alloc(f32, first_packet.total_size.x * first_packet.total_size.y),
             ._height_map_filled = 0,
             .models = try alloc.alloc(?rl.Model, amount_of_models),
+            .models_generated = 0,
         };
         @memset(self.models, null);
 
@@ -144,11 +152,18 @@ pub const WorldData = struct {
         const max_x = @min(min_x + MODEL_RESOLUTION, self.size.x);
         const max_y = @min(min_y + MODEL_RESOLUTION, self.size.y);
 
+        // Add bounds checking
+        if (min_x >= self.size.x or min_y >= self.size.y) {
+            commons.print("Model generation bounds error: min_x={}, min_y={}, size={}x{}\n", .{ min_x, min_y, self.size.x, self.size.y }, .red);
+            return;
+        }
+
         var image = rl.Image.genColor(
             @intCast(MODEL_RESOLUTION),
             @intCast(MODEL_RESOLUTION),
             .blue,
         );
+        defer image.unload(); // Make sure to unload the image
 
         for (min_y..max_y) |y| {
             for (min_x..max_x) |x| {
@@ -171,26 +186,35 @@ pub const WorldData = struct {
                     @intCast(x - min_x),
                     @intCast(y - min_y),
                     .{
-                        .r = @intCast(tile.r),
-                        .g = @intCast(tile.g),
-                        .b = @intCast(tile.b),
+                        .r = @intCast(@max(0, @min(255, tile.r))), // Clamp values
+                        .g = @intCast(@max(0, @min(255, tile.g))),
+                        .b = @intCast(@max(0, @min(255, tile.b))),
                         .a = 255,
                     },
                 );
             }
         }
-        const tex = try rl.Texture.fromImage(image); // do not deinit the texture lol
+
+        const tex = rl.Texture.fromImage(image) catch |err| {
+            commons.print("Failed to create texture: {}\n", .{err}, .red);
+            return;
+        };
 
         const model = &self.models[model_index];
-        model.* = try rl.Model.fromMesh(try self.genTerrainMesh(min_x, max_x, min_y, max_y));
+        const mesh = self.genTerrainMesh(min_x, max_x, min_y, max_y) catch |err| {
+            commons.print("Failed to generate terrain mesh for chunk {}: {}\n", .{ model_index, err }, .red);
+            tex.unload();
+            return;
+        };
+
+        model.* = rl.Model.fromMesh(mesh) catch |err| {
+            commons.print("Failed to create model from mesh for chunk {}: {}\n", .{ model_index, err }, .red);
+            tex.unload();
+            return;
+        };
+
         model.*.?.materials[0].maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = tex;
         model.*.?.materials[0].shader = light_shader;
-
-        model.*.?.transform = rl.Matrix.translate(
-            @as(f32, @floatFromInt(chunk_x * MODEL_RESOLUTION)),
-            0.0,
-            @as(f32, @floatFromInt(chunk_y * MODEL_RESOLUTION)),
-        );
     }
 
     fn genTerrainMesh(
@@ -205,48 +229,77 @@ pub const WorldData = struct {
         const width = max_x - min_x;
         const height = max_y - min_y;
 
-        const vertex_count = width * height;
-        const triangle_count = (width - 1) * (height - 1) * 2;
+        const mesh_width = width + 1;
+        const mesh_height = height + 1;
+
+        const vertex_count = mesh_width * mesh_height;
+        const triangle_count = (mesh_width - 1) * (mesh_height - 1) * 2;
+
+        // Add safety check for reasonable mesh sizes
+        if (vertex_count > 10000 or triangle_count > 20000) {
+            commons.print("Large mesh detected: {} vertices, {} triangles\n", .{ vertex_count, triangle_count }, .yellow);
+        }
 
         mesh.vertexCount = @intCast(vertex_count);
         mesh.triangleCount = @intCast(triangle_count);
 
-        mesh.vertices = @ptrCast(@alignCast(c.malloc(vertex_count * 3 * @sizeOf(f32))));
-        mesh.normals = @ptrCast(@alignCast(c.malloc(vertex_count * 3 * @sizeOf(f32))));
-        mesh.texcoords = @ptrCast(@alignCast(c.malloc(vertex_count * 2 * @sizeOf(f32))));
-        mesh.indices = @ptrCast(@alignCast(c.malloc(triangle_count * 3 * @sizeOf(u16))));
+        // Use Zig allocator instead of c.malloc for better error handling
+        const vertices_size = vertex_count * 3 * @sizeOf(f32);
+        const normals_size = vertex_count * 3 * @sizeOf(f32);
+        const texcoords_size = vertex_count * 2 * @sizeOf(f32);
+        const indices_size = triangle_count * 3 * @sizeOf(u16);
+
+        // Check total memory requirement
+        const total_memory = vertices_size + normals_size + texcoords_size + indices_size;
+        if (total_memory > 50 * 1024 * 1024) { // 50MB limit per mesh
+            commons.print("Mesh too large: {} bytes", .{total_memory}, .red);
+            return error.MeshTooLarge;
+        }
+
+        mesh.vertices = @ptrCast(@alignCast(c.malloc(vertices_size)));
+        mesh.normals = @ptrCast(@alignCast(c.malloc(normals_size)));
+        mesh.texcoords = @ptrCast(@alignCast(c.malloc(texcoords_size)));
+        mesh.indices = @ptrCast(@alignCast(c.malloc(indices_size)));
 
         if (mesh.vertices == null or mesh.normals == null or
             mesh.texcoords == null or mesh.indices == null)
+        {
+            // Clean up any allocated memory
+            if (mesh.vertices != null) c.free(mesh.vertices);
+            if (mesh.normals != null) c.free(mesh.normals);
+            if (mesh.texcoords != null) c.free(mesh.texcoords);
+            if (mesh.indices != null) c.free(mesh.indices);
             return error.OutOfMemory;
+        }
 
         // --- Vertices + texcoords
-        for (0..height) |yy| {
-            for (0..width) |xx| {
-                const index = yy * width + xx;
+        for (0..mesh_height) |yy| {
+            for (0..mesh_width) |xx| {
+                const index = yy * mesh_width + xx;
                 const world_x = min_x + xx;
                 const world_y = min_y + yy;
 
-                const noise_value = self.getHeight(world_x, world_y);
+                const safe_world_x = @min(world_x, self.size.x - 1);
+                const safe_world_y = @min(world_y, self.size.y - 1);
+                const height_value = self.getHeight(safe_world_x, safe_world_y);
 
-                // Local vertex position (chunk-local, not world!)
-                mesh.vertices[index * 3 + 0] = @as(f32, @floatFromInt(xx));
-                mesh.vertices[index * 3 + 1] = noise_value;
-                mesh.vertices[index * 3 + 2] = @as(f32, @floatFromInt(yy));
+                // Use world coordinates (original approach was correct)
+                mesh.vertices[index * 3 + 0] = @as(f32, @floatFromInt(world_x));
+                mesh.vertices[index * 3 + 1] = height_value;
+                mesh.vertices[index * 3 + 2] = @as(f32, @floatFromInt(world_y));
 
-                // Local UVs, normalized across the chunk
-                mesh.texcoords[index * 2 + 0] = @as(f32, @floatFromInt(xx)) / @as(f32, @floatFromInt(width - 1));
-                mesh.texcoords[index * 2 + 1] = @as(f32, @floatFromInt(yy)) / @as(f32, @floatFromInt(height - 1));
+                mesh.texcoords[index * 2 + 0] = @as(f32, @floatFromInt(xx)) / @as(f32, @floatFromInt(mesh_width - 1));
+                mesh.texcoords[index * 2 + 1] = @as(f32, @floatFromInt(yy)) / @as(f32, @floatFromInt(mesh_height - 1));
             }
         }
 
         // --- Indices
         var triangle_index: usize = 0;
-        for (0..height - 1) |yy| {
-            for (0..width - 1) |xx| {
-                const top_left = yy * width + xx;
+        for (0..mesh_height - 1) |yy| {
+            for (0..mesh_width - 1) |xx| {
+                const top_left = yy * mesh_width + xx;
                 const top_right = top_left + 1;
-                const bottom_left = (yy + 1) * width + xx;
+                const bottom_left = (yy + 1) * mesh_width + xx;
                 const bottom_right = bottom_left + 1;
 
                 mesh.indices[triangle_index * 3 + 0] = @truncate(top_left);
@@ -262,31 +315,32 @@ pub const WorldData = struct {
         }
 
         // --- Normals
-        for (0..height) |yy| {
-            for (0..width) |xx| {
-                const index = yy * width + xx;
+        for (0..mesh_height) |yy| {
+            for (0..mesh_width) |xx| {
+                const index = yy * mesh_width + xx;
                 const world_x = min_x + xx;
                 const world_y = min_y + yy;
 
-                const x_prev = if (world_x > 0) world_x - 1 else world_x;
-                const x_next = if (world_x < self.size.x - 1) world_x + 1 else world_x;
-                const y_prev = if (world_y > 0) world_y - 1 else world_y;
-                const y_next = if (world_y < self.size.y - 1) world_y + 1 else world_y;
+                const safe_world_x = @min(world_x, self.size.x - 1);
+                const safe_world_y = @min(world_y, self.size.y - 1);
 
-                const height_left = self.getHeight(x_prev, world_y);
-                const height_right = self.getHeight(x_next, world_y);
-                const height_up = self.getHeight(world_x, y_prev);
-                const height_down = self.getHeight(world_x, y_next);
+                const x_prev = if (safe_world_x > 0) safe_world_x - 1 else safe_world_x;
+                const x_next = if (safe_world_x < self.size.x - 1) safe_world_x + 1 else safe_world_x;
+                const y_prev = if (safe_world_y > 0) safe_world_y - 1 else safe_world_y;
+                const y_next = if (safe_world_y < self.size.y - 1) safe_world_y + 1 else safe_world_y;
+
+                const height_left = self.getHeight(x_prev, safe_world_y);
+                const height_right = self.getHeight(x_next, safe_world_y);
+                const height_up = self.getHeight(safe_world_x, y_prev);
+                const height_down = self.getHeight(safe_world_x, y_next);
 
                 const dx = (height_right - height_left) / 2.0;
                 const dy = (height_down - height_up) / 2.0;
 
-                const normal_vec = rl.Vector3{ .x = -dx, .y = 1.0, .z = -dy };
-                const normal = normal_vec.normalize();
-
-                mesh.normals[index * 3 + 0] = normal.x;
-                mesh.normals[index * 3 + 1] = normal.y;
-                mesh.normals[index * 3 + 2] = normal.z;
+                const normal_vec = rl.Vector3.init(-dx, 1.0, -dy).normalize();
+                mesh.normals[index * 3 + 0] = normal_vec.x;
+                mesh.normals[index * 3 + 1] = normal_vec.y;
+                mesh.normals[index * 3 + 2] = normal_vec.z;
             }
         }
 
@@ -294,41 +348,12 @@ pub const WorldData = struct {
         return mesh;
     }
 
-    inline fn addWallQuad(
-        a_top: rl.Vector3,
-        a_bot: rl.Vector3,
-        b_top: rl.Vector3,
-        b_bot: rl.Vector3,
-        normal: rl.Vector3,
-        mesh: *rl.Mesh,
-        vtx: *usize,
-        tri: *usize,
-    ) void {
-        const start = vtx.*;
-        const verts = [_]rl.Vector3{ a_top, a_bot, b_top, b_bot };
-        for (verts) |v| {
-            mesh.vertices[vtx.* * 3 + 0] = v.x;
-            mesh.vertices[vtx.* * 3 + 1] = v.y;
-            mesh.vertices[vtx.* * 3 + 2] = v.z;
-            mesh.texcoords[vtx.* * 2 + 0] = 0; // simple
-            mesh.texcoords[vtx.* * 2 + 1] = 0;
-            mesh.normals[vtx.* * 3 + 0] = normal.x;
-            mesh.normals[vtx.* * 3 + 1] = normal.y;
-            mesh.normals[vtx.* * 3 + 2] = normal.z;
-            vtx.* += 1;
-        }
-        // two triangles
-        mesh.indices[tri.* * 3 + 0] = @truncate(start + 0);
-        mesh.indices[tri.* * 3 + 1] = @truncate(start + 1);
-        mesh.indices[tri.* * 3 + 2] = @truncate(start + 2);
-        tri.* += 1;
-        mesh.indices[tri.* * 3 + 0] = @truncate(start + 2);
-        mesh.indices[tri.* * 3 + 1] = @truncate(start + 1);
-        mesh.indices[tri.* * 3 + 2] = @truncate(start + 3);
-        tri.* += 1;
-    }
-
     pub fn getHeight(self: *const WorldData, x: usize, y: usize) f32 {
+        if (x >= self.size.x or y >= self.size.y) {
+            commons.print("Height query out of bounds: ({}, {}) >= ({}, {})", .{ x, y, self.size.x, self.size.y }, .yellow);
+            return 0.0;
+        }
+
         return self.height_map[y * self.size.x + x];
     }
 };

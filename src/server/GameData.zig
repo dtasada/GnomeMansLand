@@ -1,4 +1,4 @@
-//! Namespace for game data used by both the client and server
+//! Namespace for game data used by the server
 const std = @import("std");
 
 const commons = @import("../commons.zig");
@@ -78,28 +78,34 @@ pub const WorldData = struct {
         var pn = try Perlin.init(alloc, seed);
         defer pn.deinit(alloc);
 
-        for (0..self.size.y) |y| {
-            for (0..self.size.x) |x| {
-                var freq = 7.68 * settings.world_generation.frequency / @as(f32, @floatFromInt(self.size.x));
-                var height: f32 = 0.0;
-                var amp: f32 = settings.world_generation.amplitude;
-                var maxValue: f32 = 0.0;
+        var pool: std.Thread.Pool = undefined;
+        try pool.init(.{ .allocator = alloc, .n_jobs = self.size.y });
+        defer pool.deinit();
 
-                var nx: f32 = 0;
-                var ny: f32 = 0;
+        for (0..self.size.y) |y| try pool.spawn(genTerrainDataLoop, .{ self, &settings, &pn, y });
+    }
 
-                for (0..@intCast(settings.world_generation.octaves)) |_| {
-                    nx = @as(f32, @floatFromInt(x)) * freq;
-                    ny = @as(f32, @floatFromInt(y)) * freq;
+    fn genTerrainDataLoop(self: *WorldData, settings: *const ServerSettings, pn: *Perlin, y: usize) void {
+        for (0..self.size.x) |x| {
+            var freq = 7.68 * settings.world_generation.frequency / @as(f32, @floatFromInt(self.size.x));
+            var height: f32 = 0.0;
+            var amp: f32 = settings.world_generation.amplitude;
+            var maxValue: f32 = 0.0;
 
-                    height += amp * pn.noise(nx, ny, 0);
-                    maxValue += amp;
-                    amp *= settings.world_generation.persistence;
-                    freq *= settings.world_generation.lacunarity;
-                }
+            var nx: f32 = 0;
+            var ny: f32 = 0;
 
-                self.height_map[y * self.size.x + x] = height;
+            for (0..@intCast(settings.world_generation.octaves)) |_| {
+                nx = @as(f32, @floatFromInt(x)) * freq;
+                ny = @as(f32, @floatFromInt(y)) * freq;
+
+                height += amp * pn.noise(nx, ny, 0);
+                maxValue += amp;
+                amp *= settings.world_generation.persistence;
+                freq *= settings.world_generation.lacunarity;
             }
+
+            self.height_map[y * self.size.x + x] = height;
         }
     }
 };

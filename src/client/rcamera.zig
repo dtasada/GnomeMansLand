@@ -2,8 +2,8 @@
 const std = @import("std");
 const rl = @import("raylib");
 
-pub const MIN_FOV = 1;
-pub const MAX_FOV = 512;
+pub const MIN_FOV: f32 = 1.0;
+pub var MAX_FOV: f32 = 512.0;
 
 const CAMERA_MOVE_SPEED = 5.4; // Units per second
 const CAMERA_ROTATION_SPEED = 0.03;
