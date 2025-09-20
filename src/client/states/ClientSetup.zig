@@ -66,7 +66,7 @@ pub fn update(self: *Self, game: *Game) !void {
     if (len != 0) {
         game.settings.multiplayer.server_port = std.fmt.parseUnsigned(u16, @ptrCast(self.server_port_string_buf[0..len]), 10) catch def: {
             var port_box = self.text_box_set.boxes[1];
-            var error_text = try ui.Text.init(game.alloc, .{
+            var error_text = try ui.Text.init(.{
                 .body = "not a valid number!",
                 .x = port_box.inner_text.hitbox.x + port_box.getShadowHitbox().width,
                 .y = port_box.inner_text.hitbox.y,

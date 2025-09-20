@@ -51,6 +51,8 @@ pub const WorldData = struct {
     size: commons.v2u,
     finished_generating: std.atomic.Value(bool),
     network_chunks_ready: std.atomic.Value(bool),
+    floats_written: std.atomic.Value(usize),
+    network_chunks_generated: std.atomic.Value(usize),
 
     /// starts genTerrainData thread
     pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !WorldData {
@@ -60,6 +62,8 @@ pub const WorldData = struct {
             .height_map = try alloc.alloc(f32, x * y),
             .finished_generating = std.atomic.Value(bool).init(false),
             .network_chunks_ready = std.atomic.Value(bool).init(false),
+            .floats_written = std.atomic.Value(usize).init(0),
+            .network_chunks_generated = std.atomic.Value(usize).init(0),
         };
         errdefer alloc.free(self.height_map);
 
@@ -88,9 +92,8 @@ pub const WorldData = struct {
         try pool.init(.{ .allocator = alloc, .n_jobs = self.size.y });
         defer pool.deinit();
 
-        var amount_of_chunks_completed = std.atomic.Value(usize).init(0);
         for (0..self.size.y) |y| {
-            try pool.spawn(genTerrainDataLoop, .{ self, &settings, &pn, y, &amount_of_chunks_completed });
+            try pool.spawn(genTerrainDataLoop, .{ self, &settings, &pn, y });
         }
     }
 
@@ -99,7 +102,6 @@ pub const WorldData = struct {
         settings: *const ServerSettings,
         pn: *const Perlin,
         y: usize,
-        amount_completed: *std.atomic.Value(usize),
     ) void {
         for (0..self.size.x) |x| {
             var freq = 7.68 * settings.world_generation.frequency / @as(f32, @floatFromInt(self.size.x));
@@ -121,9 +123,10 @@ pub const WorldData = struct {
             }
 
             self.height_map[y * self.size.x + x] = height;
+            _ = self.floats_written.fetchAdd(1, .monotonic);
         }
 
-        amount_completed.store(amount_completed.load(.monotonic) + 1, .monotonic);
-        if (amount_completed.load(.monotonic) == self.size.y) self.finished_generating.store(true, .monotonic);
+        if (self.floats_written.load(.monotonic) == self.height_map.len)
+            self.finished_generating.store(true, .monotonic);
     }
 };

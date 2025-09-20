@@ -76,7 +76,7 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
 }
 
 fn listen(self: *Self) !void {
-    const buf = try self.alloc.alloc(u8, 65535);
+    const buf = try self.alloc.alloc(u8, 65535); // don't decrease this. decreasing it makes it slower
     defer self.alloc.free(buf);
 
     var pending = try std.ArrayList(u8).initCapacity(self.alloc, 65535);
@@ -97,6 +97,7 @@ fn listen(self: *Self) !void {
         };
 
         if (bytes_read == 0) break;
+        if (!self.running.load(.monotonic)) return;
 
         try pending.appendSlice(self.alloc, buf[0..bytes_read]);
 
@@ -155,10 +156,9 @@ fn handleMessage(self: *Self, message: []const u8) !void {
                         defer request_parsed.deinit();
 
                         const world_data_chunk: socket_packet.WorldDataChunk = request_parsed.value;
-                        if (self.game_data.world_data) |*world_data|
-                            world_data.addChunk(world_data_chunk)
-                        else
-                            self.game_data.world_data = try GameData.WorldData.init(self.alloc, world_data_chunk);
+                        if (self.game_data.world_data) |*world_data| {
+                            world_data.addChunk(world_data_chunk);
+                        } else self.game_data.world_data = try GameData.WorldData.init(self.alloc, world_data_chunk);
                     }
                 }
             }

@@ -276,7 +276,7 @@ fn drawUi(self: *Self) void {
             rl.drawText(rl.textFormat("World: %dx%d, Complete: %d", .{
                 world_data.size.x,
                 world_data.size.y,
-                @as(i32, if (world_data.isComplete()) 1 else 0),
+                @as(i32, if (world_data.allFloatsDownloaded()) 1 else 0),
             }), 12, 72, 24, .white);
 
             const chunks_total = world_data.models.len;
@@ -318,6 +318,42 @@ pub fn loop(self: *Self) !void {
             .client_setup => try self.client_setup.update(self),
             .server_setup => try self.server_setup.update(self),
             .game => {
+                // loading screen
+                if (self.client) |client| {
+                    if (client.game_data.world_data) |*world_data| {
+                        if (!world_data.allFloatsDownloaded() or !world_data.allModelsGenerated()) {
+                            rl.beginDrawing();
+                            rl.clearBackground(.black);
+
+                            var buf: [33]u8 = undefined;
+                            const body = if (!world_data.allFloatsDownloaded())
+                                try std.fmt.bufPrint(&buf, "Downloading world ({}%)...", .{
+                                    @divFloor(100 * world_data._height_map_filled, world_data.height_map.len),
+                                })
+                            else if (!world_data.allModelsGenerated()) blk: {
+                                world_data.genModel(self.settings, self.light_shader) catch |err| {
+                                    commons.print("Failed to generate model: {}", .{err}, .red);
+                                };
+                                break :blk try std.fmt.bufPrint(&buf, "Generating world models ({}%)...", .{
+                                    @divFloor(100 * world_data.models_generated, world_data.models.len),
+                                });
+                            } else unreachable;
+
+                            var loading_screen_text = try ui.Text.init(.{
+                                .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0,
+                                .y = @as(f32, @floatFromInt(rl.getScreenHeight())) / 2.0,
+                                .anchor = .center,
+                                .body = body,
+                            });
+
+                            loading_screen_text.update();
+
+                            rl.endDrawing();
+                            continue;
+                        }
+                    }
+                }
+
                 // update step
                 try self.handleKeys();
 
@@ -354,13 +390,10 @@ pub fn loop(self: *Self) !void {
                         }
 
                         // Enhanced model rendering with debugging
-                        for (world_data.models, 0..) |model, i| {
-                            if (model) |m| {
+                        if (world_data.allModelsGenerated()) {
+                            for (world_data.models) |model| if (model) |m| {
                                 rl.drawModel(m, .zero(), 1.0, .white);
-                            } else if (world_data.isComplete())
-                                world_data.genModel(self.settings, self.light_shader) catch |err| {
-                                    commons.print("Failed to generate model {}: {}", .{ i, err }, .red);
-                                };
+                            } else unreachable;
                         }
                     }
                 }

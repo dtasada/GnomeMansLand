@@ -51,6 +51,49 @@ pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
 }
 
 pub fn update(self: *Self, game: *Game) !void {
+    if (game.server) |server| {
+        if (!server.game_data.world_data.finished_generating.load(.monotonic) or
+            !server.game_data.world_data.network_chunks_ready.load(.monotonic))
+        {
+            rl.beginDrawing();
+            rl.clearBackground(.black);
+
+            var buf: [24]u8 = undefined;
+            const body = if (!server.game_data.world_data.finished_generating.load(.monotonic))
+                try std.fmt.bufPrint(
+                    &buf,
+                    "Creating world ({}%)...",
+                    .{@divFloor(
+                        server.game_data.world_data.floats_written.load(.monotonic),
+                        server.game_data.world_data.height_map.len,
+                    )},
+                )
+            else if (!server.game_data.world_data.network_chunks_ready.load(.monotonic))
+                try std.fmt.bufPrint(
+                    &buf,
+                    "Preparing world ({}%)...",
+                    .{@divFloor(
+                        100 * server.game_data.world_data.network_chunks_generated.load(.monotonic),
+                        server.socket_packets.world_data_chunks.len,
+                    )},
+                )
+            else
+                unreachable;
+
+            var loading_screen_text = try ui.Text.init(.{
+                .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0,
+                .y = @as(f32, @floatFromInt(rl.getScreenHeight())) / 2.0,
+                .anchor = .center,
+                .body = body,
+            });
+
+            loading_screen_text.update();
+
+            rl.endDrawing();
+            return;
+        }
+    }
+
     rl.beginDrawing();
     rl.clearBackground(.black);
 
@@ -70,7 +113,7 @@ pub fn update(self: *Self, game: *Game) !void {
     if (len != 0) {
         game.settings.multiplayer.server_port = std.fmt.parseUnsigned(u16, @ptrCast(self.port_string_buf[0..len]), 10) catch def: {
             var port_box = self.text_box_set.boxes[1];
-            var error_text = try ui.Text.init(game.alloc, .{
+            var error_text = try ui.Text.init(.{
                 .body = "not a valid number!",
                 .x = port_box.inner_text.hitbox.x + port_box.getShadowHitbox().width,
                 .y = port_box.inner_text.hitbox.y,

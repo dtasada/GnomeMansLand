@@ -36,7 +36,6 @@ pub const Button = struct {
     hover_anim_bar_width: f32,
 
     pub fn init(
-        alloc: std.mem.Allocator,
         settings: struct {
             text: []const u8,
             x: f32,
@@ -50,7 +49,7 @@ pub const Button = struct {
         },
     ) !Button {
         var self = Button{
-            .text = try Text.init(alloc, .{
+            .text = try Text.init(.{
                 .body = settings.text,
                 .x = settings.x,
                 .y = settings.y,
@@ -143,7 +142,7 @@ pub const ButtonSet = struct {
         errdefer alloc.free(self.buttons);
 
         for (button_texts, 0..) |text, i|
-            self.buttons[i] = try Button.init(alloc, .{
+            self.buttons[i] = try Button.init(.{
                 .text = text,
                 .x = settings.top_left_x,
                 .y = if (i == 0) // if the first one, just base it on topleft
@@ -187,7 +186,6 @@ fn Text_(M: bool) type {
     const string_type = if (M) []u8 else []const u8;
 
     return struct {
-        alloc: std.mem.Allocator,
         body: string_type,
         x: f32, // x of anchor point
         y: f32, // y of anchor point
@@ -199,21 +197,17 @@ fn Text_(M: bool) type {
         hitbox: rl.Rectangle,
         body_cstr: [MAX_LEN:0]u8,
 
-        pub fn init(
-            alloc: std.mem.Allocator,
-            settings: struct {
-                body: string_type,
-                x: f32,
-                y: f32,
-                font: ?rl.Font = null,
-                font_size: FontSize = .body,
-                spacing: f32 = 2.0,
-                color: rl.Color = .white,
-                anchor: Anchor = .topleft,
-            },
-        ) !Text_(M) {
+        pub fn init(settings: struct {
+            body: string_type,
+            x: f32,
+            y: f32,
+            font: ?rl.Font = null,
+            font_size: FontSize = .body,
+            spacing: f32 = 2.0,
+            color: rl.Color = .white,
+            anchor: Anchor = .topleft,
+        }) !Text_(M) {
             var self = Text_(M){
-                .alloc = alloc,
                 .body = settings.body,
                 .x = settings.x,
                 .y = settings.y,
@@ -303,13 +297,13 @@ pub const TextBox = struct {
         anchor: Anchor = .topleft,
         max_len: usize = MAX_LEN,
     }) !TextBox {
-        const label = try Text.init(alloc, .{
+        const label = try Text.init(.{
             .x = settings.x,
             .y = settings.y,
             .body = settings.label,
         });
         var self = TextBox{
-            .inner_text = try TextVariable.init(alloc, .{
+            .inner_text = try TextVariable.init(.{
                 .x = getRight(label.hitbox) + 16.0,
                 .y = settings.y,
                 .body = "", // gets set right after this
@@ -523,7 +517,7 @@ pub const TextBoxSet = struct {
 
         var longest_label_x: f32 = 0.0;
         for (labels, 0..) |label, i| {
-            self.labels[i] = try Text.init(alloc, .{
+            self.labels[i] = try Text.init(.{
                 .body = label.label,
                 .x = settings.top_left_x,
                 .y = if (i == 0) // if the first one, just base it on topleft

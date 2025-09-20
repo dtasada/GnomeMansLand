@@ -119,8 +119,12 @@ pub const WorldData = struct {
         self._height_map_filled += world_data_chunk.height_map.len;
     }
 
-    pub fn isComplete(self: *const WorldData) bool {
-        return self._height_map_filled == self.size.x * self.size.y;
+    pub fn allFloatsDownloaded(self: *const WorldData) bool {
+        return self._height_map_filled == self.height_map.len;
+    }
+
+    pub fn allModelsGenerated(self: *const WorldData) bool {
+        return self.models_generated == self.models.len;
     }
 
     pub fn deinit(self: *const WorldData, alloc: std.mem.Allocator) void {
@@ -215,6 +219,7 @@ pub const WorldData = struct {
 
         model.*.?.materials[0].maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = tex;
         model.*.?.materials[0].shader = light_shader;
+        self.models_generated += 1;
     }
 
     fn genTerrainMesh(

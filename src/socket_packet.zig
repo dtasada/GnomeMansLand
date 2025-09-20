@@ -36,7 +36,6 @@ pub const WorldDataChunk = struct {
             alloc,
             world_data_chunks,
             server_world_data,
-            world_data_chunks.len,
         });
     }
 
@@ -45,22 +44,18 @@ pub const WorldDataChunk = struct {
         alloc: std.mem.Allocator,
         world_data_chunks: []?WorldDataChunk,
         server_world_data: *ServerGameData.WorldData,
-        amount_of_chunks: usize,
     ) !void {
         var pool: std.Thread.Pool = undefined;
         try pool.init(.{ .allocator = alloc, .n_jobs = 10 });
         defer pool.deinit();
 
         var wg: std.Thread.WaitGroup = .{};
-        var amount_of_chunks_ready = std.atomic.Value(usize).init(0);
-        for (0..amount_of_chunks) |i| {
+        for (0..world_data_chunks.len) |i| {
             pool.spawnWg(&wg, genChunk, .{
                 alloc,
-                i,
-                amount_of_chunks,
                 world_data_chunks,
                 server_world_data,
-                &amount_of_chunks_ready,
+                i,
             });
         }
 
@@ -69,11 +64,9 @@ pub const WorldDataChunk = struct {
 
     fn genChunk(
         alloc: std.mem.Allocator,
-        i: usize,
-        amount_of_chunks: usize,
         chunks: []?WorldDataChunk,
         server_world_data: *ServerGameData.WorldData,
-        amount_of_chunks_ready: *std.atomic.Value(usize),
+        i: usize,
     ) void {
         const start_idx = i * FLOATS_PER_CHUNK;
         const end_idx = @min(start_idx + FLOATS_PER_CHUNK, server_world_data.height_map.len);
@@ -90,8 +83,8 @@ pub const WorldDataChunk = struct {
             .height_map = server_world_data.height_map[start_idx..end_idx],
         };
 
-        amount_of_chunks_ready.store(amount_of_chunks_ready.load(.monotonic) + 1, .monotonic);
-        if (amount_of_chunks_ready.load(.monotonic) == amount_of_chunks)
+        _ = server_world_data.network_chunks_generated.fetchAdd(1, .monotonic);
+        if (server_world_data.network_chunks_generated.load(.monotonic) == chunks.len)
             server_world_data.network_chunks_ready.store(true, .monotonic);
     }
 };

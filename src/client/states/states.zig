@@ -58,11 +58,13 @@ fn waitForServer(game: *Game) !void {
     if (game.server) |server| {
         while (true) {
             if (server.game_data.world_data.finished_generating.load(.monotonic)) {
-                if (chunk_thread == null) chunk_thread = try socket_packet.WorldDataChunk.init(
-                    server.alloc,
-                    &server.game_data.world_data,
-                    server.socket_packets.world_data_chunks,
-                );
+                if (chunk_thread == null) {
+                    chunk_thread = try socket_packet.WorldDataChunk.init(
+                        server.alloc,
+                        &server.game_data.world_data,
+                        server.socket_packets.world_data_chunks,
+                    );
+                }
 
                 if (server.game_data.world_data.network_chunks_ready.load(.monotonic)) {
                     if (chunk_thread) |t| t.join();

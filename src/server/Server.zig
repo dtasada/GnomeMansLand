@@ -115,6 +115,8 @@ fn handleClientSend(self: *const Self, client: *Client) !void {
 
 /// Parses, handles and responds to message accordingly
 fn handleMessage(self: *Self, client: *Client, message: []u8) !void {
+    if (!self.running.load(.monotonic) or !client.open.load(.monotonic)) return;
+
     const message_parsed: std.json.Parsed(std.json.Value) = try std.json.parseFromSlice(std.json.Value, self.alloc, message, .{});
     defer message_parsed.deinit();
 

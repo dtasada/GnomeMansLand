@@ -18,7 +18,7 @@ buttons: ui.ButtonSet,
 title_text: ui.Text,
 
 pub fn init(alloc: std.mem.Allocator) !Self {
-    const nickname_input_label = try ui.Text.init(alloc, .{
+    const nickname_input_label = try ui.Text.init(.{
         .body = "nickname: ",
         .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0 - 120,
         .y = 480,
@@ -39,7 +39,7 @@ pub fn init(alloc: std.mem.Allocator) !Self {
                 "Settings",
             },
         ),
-        .title_text = try ui.Text.init(alloc, .{
+        .title_text = try ui.Text.init(.{
             .body = "Gnome Man's Land",
             .font_size = .title,
             .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0,
