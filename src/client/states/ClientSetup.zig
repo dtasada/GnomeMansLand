@@ -13,19 +13,18 @@ text_box_set: ui.TextBoxSet,
 button_set: ui.ButtonSet,
 /// u16 port number can only be 5 chars
 server_port_string_buf: [6]u8,
+connect_error: ?ui.Text,
 
 pub fn init(alloc: std.mem.Allocator, game: *Game) !Self {
     var self: Self = undefined;
-
-    @memset(&self.server_port_string_buf, 0);
-    _ = try std.fmt.bufPrint(&self.server_port_string_buf, "{}", .{game.settings.multiplayer.server_port});
+    self.connect_error = null;
 
     self.text_box_set = try ui.TextBoxSet.initGeneric(
         alloc,
         .{ .top_left_x = 24, .top_left_y = 128 },
         &.{
             .{ .label = "Server address: ", .max_len = 15, .default_value = @constCast(game.settings.multiplayer.server_host) },
-            .{ .label = "Server port: ", .max_len = 5, .default_value = self.server_port_string_buf[0 .. self.server_port_string_buf.len - 1] }, // buf.len - 1 bc discard sentinel
+            .{ .label = "Server port: ", .max_len = 5, .default_value = try std.fmt.bufPrint(&self.server_port_string_buf, "{}", .{game.settings.multiplayer.server_port}) }, // buf.len - 1 bc discard sentinel
         },
     );
     self.button_set = try ui.ButtonSet.initGeneric(
@@ -56,14 +55,26 @@ pub fn update(self: *Self, game: *Game) !void {
         game.settings.multiplayer.server_host,
         &self.server_port_string_buf,
     });
-    try self.button_set.update(.{
+
+    self.button_set.update(.{
         .{ states.openGame, .{game} },
         .{ states.openLobby, .{game} },
-    });
+    }) catch |err| switch (err) {
+        error.CouldNotConnect => {
+            self.connect_error = try ui.Text.init(.{
+                .body = "Couldn't connect to server!",
+                .color = .red,
+                .x = ui.getRight(self.button_set.buttons[0].getHitbox()) + 12.0,
+                .y = self.button_set.buttons[0].getHitbox().y,
+            });
+        },
+        else => return err,
+    };
+
+    if (self.connect_error) |*ce| ce.update();
 
     // bro do not touch this code this is so fragile bro. null termination sucks
-    const len = std.mem.indexOf(u8, &self.server_port_string_buf, &.{0}) orelse 0;
-    if (len != 0) {
+    if (std.mem.indexOfScalar(u8, &self.server_port_string_buf, 0)) |len| {
         game.settings.multiplayer.server_port = std.fmt.parseUnsigned(u16, @ptrCast(self.server_port_string_buf[0..len]), 10) catch def: {
             var port_box = self.text_box_set.boxes[1];
             var error_text = try ui.Text.init(.{

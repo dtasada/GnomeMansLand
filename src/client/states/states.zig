@@ -29,17 +29,17 @@ pub fn serverSetup(game: *Game) void {
 }
 
 /// Creates client and opens game
-pub fn openGame(game: *Game) void {
+pub fn openGame(game: *Game) !void {
     if (game.lobby.nickname_input.len != 0) { // only if nickname isn't empty
         if (game.client) |client| client.deinit(game.alloc);
 
-        game.client = Client.init(
+        game.client = try Client.init(
             game.alloc,
             game.settings,
             socket_packet.ClientConnect.init(game.lobby.nickname_input.inner_text.body),
-        ) catch null;
+        );
 
-        if (game.client) |_| game.state = .game;
+        game.state = .game;
     }
 }
 
@@ -48,10 +48,8 @@ pub fn hostServer(game: *Game) !void {
 
     game.server = try Server.init(game.alloc, game.settings.server);
 
-    if (game.server) |_| {
-        const wait_for_server_thread = try std.Thread.spawn(.{}, waitForServer, .{game});
-        wait_for_server_thread.detach();
-    }
+    const wait_for_server_thread = try std.Thread.spawn(.{}, waitForServer, .{game});
+    wait_for_server_thread.detach();
 }
 
 fn waitForServer(game: *Game) !void {
@@ -69,7 +67,7 @@ fn waitForServer(game: *Game) !void {
 
                 if (server.game_data.world_data.network_chunks_ready.load(.monotonic)) {
                     if (chunk_thread) |t| t.join();
-                    openGame(game);
+                    try openGame(game);
                     return;
                 }
             }

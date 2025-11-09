@@ -156,9 +156,10 @@ fn handleMessage(self: *Self, message: []const u8) !void {
                         defer request_parsed.deinit();
 
                         const world_data_chunk: socket_packet.WorldDataChunk = request_parsed.value;
-                        if (self.game_data.world_data) |*world_data| {
-                            world_data.addChunk(world_data_chunk);
-                        } else self.game_data.world_data = try GameData.WorldData.init(self.alloc, world_data_chunk);
+                        if (self.game_data.world_data) |*world_data|
+                            world_data.addChunk(world_data_chunk)
+                        else
+                            self.game_data.world_data = try GameData.WorldData.init(self.alloc, world_data_chunk);
                     }
                 }
             }

@@ -19,15 +19,16 @@ pub fn init(alloc: std.mem.Allocator, game: *Game) !Self {
 
     @memset(&self.port_string_buf, 0);
     @memset(&self.max_players_string_buf, 0);
-    _ = try std.fmt.bufPrint(&self.port_string_buf, "{}", .{game.settings.server.port});
-    _ = try std.fmt.bufPrint(&self.max_players_string_buf, "{}", .{game.settings.server.max_players});
+
+    const server_port = try std.fmt.bufPrint(&self.port_string_buf, "{}", .{game.settings.server.port});
+    const max_players = try std.fmt.bufPrint(&self.max_players_string_buf, "{}", .{game.settings.server.max_players});
 
     self.text_box_set = try ui.TextBoxSet.initGeneric(
         alloc,
         .{ .top_left_x = 24, .top_left_y = 128 },
         &.{
-            .{ .label = "Server port: ", .max_len = 5, .default_value = "42069" },
-            .{ .label = "Max players:", .max_len = 1, .default_value = "4" },
+            .{ .label = "Server port: ", .max_len = 5, .default_value = server_port },
+            .{ .label = "Max players:", .max_len = 1, .default_value = max_players },
         },
     );
     self.button_set = try ui.ButtonSet.initGeneric(
@@ -98,8 +99,6 @@ pub fn update(self: *Self, game: *Game) !void {
     rl.beginDrawing();
     rl.clearBackground(.black);
 
-    // u16 port number can only be 5 chars, ipv4 can only be 15
-
     try self.text_box_set.update(&.{
         &self.port_string_buf,
         &self.max_players_string_buf,
@@ -111,7 +110,11 @@ pub fn update(self: *Self, game: *Game) !void {
 
     // bro do not touch this code this is so fragile bro. null termination sucks
     if (std.mem.indexOf(u8, &self.port_string_buf, &.{0})) |len| {
-        game.settings.multiplayer.server_port = std.fmt.parseUnsigned(u16, @ptrCast(self.port_string_buf[0..len]), 10) catch def: {
+        game.settings.multiplayer.server_port = std.fmt.parseUnsigned(
+            u16,
+            @ptrCast(self.port_string_buf[0..len]),
+            10,
+        ) catch default: {
             var port_box = self.text_box_set.boxes[1];
             var error_text = try ui.Text.init(.{
                 .body = "not a valid number!",
@@ -121,7 +124,7 @@ pub fn update(self: *Self, game: *Game) !void {
             });
             error_text.update();
 
-            break :def game.settings.multiplayer.server_port;
+            break :default game.settings.multiplayer.server_port;
         };
     }
 

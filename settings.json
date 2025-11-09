@@ -8,12 +8,12 @@
     },
     "multiplayer": {
         "server_host": "127.0.0.1",
-        "server_port": 42069,
+        "server_port": 4269,
         "polling_rate": 10
     },
     "server": {
         "max_players": 8,
-        "port": 42069,
+        "port": 4269,
         "polling_rate": 10,
         "world_generation": {
             "resolution": [

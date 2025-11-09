@@ -4,77 +4,75 @@ const std = @import("std");
 const rg = @import("raygui");
 const rl = @import("raylib");
 
-const Server = @import("../server/Server.zig");
-const Client = @import("Client.zig");
-const GameData = @import("GameData.zig");
-const Light = @import("Light.zig");
-const Settings = @import("Settings.zig");
 const states = @import("states/states.zig");
-
 const commons = @import("../commons.zig");
 const socket_packet = @import("../socket_packet.zig");
 const rcamera = @import("rcamera.zig");
 const ui = @import("ui.zig");
 
+const Server = @import("../server/Server.zig");
+const Client = @import("Client.zig");
+const GameData = @import("GameData.zig");
+const Light = @import("Light.zig");
+const Settings = @import("Settings.zig");
+
 const Self = @This();
 
-_gpa: std.heap.GeneralPurposeAllocator(.{ .safety = true }),
-_settings_parsed: std.json.Parsed(Settings),
-alloc: std.mem.Allocator,
-settings: Settings,
-camera: ?rl.Camera3D,
-camera_mode: enum { first_person, isometric },
-light_shader: rl.Shader,
+_gpa: std.heap.GeneralPurposeAllocator(.{}) = .init,
+camera: ?rl.Camera3D = null,
+camera_mode: enum { first_person, isometric } = .isometric,
+camera_sens: f32 = 0.1,
 lights: std.ArrayList(Light) = .empty,
-mouse_is_enabled: bool,
-client: ?*Client,
-server: ?*Server,
-
+mouse_is_enabled: bool = true,
+client: ?*Client = null,
+server: ?*Server = null,
 state: enum {
     lobby,
     game,
     lobby_settings,
     client_setup,
     server_setup,
-},
+} = .lobby,
+
+_settings_parsed: std.json.Parsed(Settings),
+alloc: std.mem.Allocator,
+settings: Settings,
+light_shader: rl.Shader,
 
 lobby: states.Lobby,
 lobby_settings: states.LobbySettings,
 client_setup: states.ClientSetup,
 server_setup: states.ServerSetup,
 
-// additional camera attributes
-pan_sensitivity: f32 = 0.1,
-
 pub fn init(alloc: std.mem.Allocator) !*Self {
     var self: *Self = try alloc.create(Self);
     errdefer alloc.destroy(self);
 
-    self._gpa = .{};
+    self.* = .{
+        ._settings_parsed = undefined,
+        .alloc = undefined,
+        .settings = undefined,
+        .light_shader = undefined,
+
+        .lobby = undefined,
+        .lobby_settings = undefined,
+        .client_setup = undefined,
+        .server_setup = undefined,
+    };
+
     self.alloc = self._gpa.allocator();
 
     self._settings_parsed = try parseSettings(self.alloc);
     errdefer self._settings_parsed.deinit();
-
     self.settings = self._settings_parsed.value;
 
     self.setupRaylib();
 
-    self.camera = null;
-
-    self.camera_mode = .isometric;
-
     try self.setupLights();
     errdefer self.lights.deinit(self.alloc);
 
-    self.mouse_is_enabled = true;
-    self.state = .lobby;
-
-    self.client = null;
-    self.server = null;
-
-    ui.chalk_font = try rl.loadFontEx("resources/fonts/chalk.ttf", 256, null);
-    ui.gwathlyn_font = try rl.loadFontEx("resources/fonts/gwathlyn.ttf", 256, null);
+    ui.chalk_font = try rl.loadFontEx("resources/fonts/chalk.ttf", 128, null);
+    ui.gwathlyn_font = try rl.loadFontEx("resources/fonts/gwathlyn.ttf", 128, null);
 
     self.lobby = try states.Lobby.init(self.alloc);
     self.lobby_settings = try states.LobbySettings.init(self.alloc);
@@ -155,6 +153,7 @@ fn setupRaylib(self: *const Self) void {
     rl.setConfigFlags(.{
         .vsync_hint = true,
         .window_resizable = true,
+        .msaa_4x_hint = true,
     });
 
     rl.setTraceLogLevel(.warning);
@@ -390,7 +389,7 @@ pub fn loop(self: *Self) !void {
                             rl.beginDrawing();
                             rl.clearBackground(.black);
 
-                            var buf: [33]u8 = undefined;
+                            var buf: [33]u8 = undefined; // hardcoded 33 bytes bc that's the longest possible string.
                             const body = if (!world_data.allFloatsDownloaded())
                                 try std.fmt.bufPrint(&buf, "Downloading world ({}%)...", .{
                                     @divFloor(100 * world_data._height_map_filled, world_data.height_map.len),
