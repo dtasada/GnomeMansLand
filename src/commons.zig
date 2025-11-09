@@ -19,6 +19,10 @@ pub fn v2(T: type) type {
         pub fn init(x: T, y: T) Self {
             return .{ .x = x, .y = y };
         }
+
+        pub fn format(self: Self, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+            try writer.print("v2(x={}, y={})", .{ self.x, self.y });
+        }
     };
 }
 

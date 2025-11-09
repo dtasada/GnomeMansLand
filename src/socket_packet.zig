@@ -46,7 +46,7 @@ pub const WorldDataChunk = struct {
         server_world_data: *ServerGameData.WorldData,
     ) !void {
         var pool: std.Thread.Pool = undefined;
-        try pool.init(.{ .allocator = alloc, .n_jobs = 10 });
+        try pool.init(.{ .allocator = alloc });
         defer pool.deinit();
 
         var wg: std.Thread.WaitGroup = .{};
@@ -71,7 +71,7 @@ pub const WorldDataChunk = struct {
         const start_idx = i * FLOATS_PER_CHUNK;
         const end_idx = @min(start_idx + FLOATS_PER_CHUNK, server_world_data.height_map.len);
 
-        chunks[i] = WorldDataChunk{
+        chunks[i] = .{
             .descriptor = std.fmt.allocPrint(alloc, "world_data_chunk-{}", .{i}) catch |err| {
                 commons.print("Couldn't create world_data_chunk-{{}} descriptor: {}\n", .{err}, .red);
                 return;

@@ -47,8 +47,8 @@ pub const Player = struct {
 };
 
 pub const WorldData = struct {
-    height_map: []f32, // 2d in practice
     size: commons.v2u,
+    height_map: []f32, // 2d in practice
     finished_generating: std.atomic.Value(bool),
     network_chunks_ready: std.atomic.Value(bool),
     floats_written: std.atomic.Value(usize),
@@ -89,7 +89,7 @@ pub const WorldData = struct {
         defer pn.deinit(alloc);
 
         var pool: std.Thread.Pool = undefined;
-        try pool.init(.{ .allocator = alloc, .n_jobs = self.size.y });
+        try pool.init(.{ .allocator = alloc });
         defer pool.deinit();
 
         for (0..self.size.y) |y| {

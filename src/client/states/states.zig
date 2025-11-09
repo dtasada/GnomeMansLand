@@ -45,7 +45,7 @@ pub fn openGame(game: *Game) void {
 pub fn hostServer(game: *Game) !void {
     if (game.server) |server| server.deinit(game.alloc);
 
-    game.server = Server.init(game.alloc, game.settings.server) catch return;
+    game.server = try Server.init(game.alloc, game.settings.server);
 
     if (game.server) |_| {
         const wait_for_server_thread = try std.Thread.spawn(.{}, waitForServer, .{game});

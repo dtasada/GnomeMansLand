@@ -52,28 +52,29 @@ pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
 
 pub fn update(self: *Self, game: *Game) !void {
     if (game.server) |server| {
-        if (!server.game_data.world_data.finished_generating.load(.monotonic) or
-            !server.game_data.world_data.network_chunks_ready.load(.monotonic))
+        const world_data = &server.game_data.world_data;
+        if (!world_data.finished_generating.load(.monotonic) or
+            !world_data.network_chunks_ready.load(.monotonic))
         {
             rl.beginDrawing();
             rl.clearBackground(.black);
 
             var buf: [24]u8 = undefined;
-            const body = if (!server.game_data.world_data.finished_generating.load(.monotonic))
+            const body = if (!world_data.finished_generating.load(.monotonic))
                 try std.fmt.bufPrint(
                     &buf,
                     "Creating world ({}%)...",
                     .{@divFloor(
-                        server.game_data.world_data.floats_written.load(.monotonic),
-                        server.game_data.world_data.height_map.len,
+                        world_data.floats_written.load(.monotonic),
+                        world_data.height_map.len,
                     )},
                 )
-            else if (!server.game_data.world_data.network_chunks_ready.load(.monotonic))
+            else if (!world_data.network_chunks_ready.load(.monotonic))
                 try std.fmt.bufPrint(
                     &buf,
                     "Preparing world ({}%)...",
                     .{@divFloor(
-                        100 * server.game_data.world_data.network_chunks_generated.load(.monotonic),
+                        100 * world_data.network_chunks_generated.load(.monotonic),
                         server.socket_packets.world_data_chunks.len,
                     )},
                 )
@@ -109,8 +110,7 @@ pub fn update(self: *Self, game: *Game) !void {
     });
 
     // bro do not touch this code this is so fragile bro. null termination sucks
-    const len = std.mem.indexOf(u8, &self.port_string_buf, &[_]u8{0}) orelse 0;
-    if (len != 0) {
+    if (std.mem.indexOf(u8, &self.port_string_buf, &[_]u8{0})) |len| {
         game.settings.multiplayer.server_port = std.fmt.parseUnsigned(u16, @ptrCast(self.port_string_buf[0..len]), 10) catch def: {
             var port_box = self.text_box_set.boxes[1];
             var error_text = try ui.Text.init(.{

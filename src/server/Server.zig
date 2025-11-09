@@ -188,6 +188,7 @@ fn handleMessage(self: *Self, client: *Client, message: []u8) !void {
 /// `game_data` and `socket_packets.world_data_chunks` are populated asynchronously
 pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     var self: *Self = try alloc.create(Self);
+    errdefer alloc.destroy(self);
 
     self._gpa = .init;
     self.alloc = self._gpa.allocator();

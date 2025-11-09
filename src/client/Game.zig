@@ -299,7 +299,12 @@ fn getMouseToWorld(self: *Self) ?rl.Vector3 {
                     if (model) |m| {
                         const mouse_pos_ray = rl.getScreenToWorldRay(rl.getMousePosition(), camera);
                         const mouse_world_collision = rl.getRayCollisionMesh(mouse_pos_ray, m.meshes[0], m.transform);
-                        return mouse_world_collision.point;
+                        if (mouse_world_collision.point.equals(.zero()) != 0)
+                            // if collision returns v3(0), skip this model
+                            continue
+                        else
+                            // else return this collision point
+                            return mouse_world_collision.point;
                     }
                 }
             }
