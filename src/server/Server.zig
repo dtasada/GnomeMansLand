@@ -72,14 +72,18 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
     while (self.running.load(.monotonic)) : (std.Thread.sleep(polling_rate * std.time.ns_per_ms)) {
         const bytes_read = client.sock.receive(buf) catch |err| switch (err) {
             error.WouldBlock => continue,
-            error.ConnectionResetByPeer => {
-                commons.print("Socket disconnected\n", .{}, .blue);
-                return;
-            },
-            else => {
-                commons.print("Couldn't read from socket: {}\n", .{err}, .red);
-                return err;
-            },
+            error.ConnectionResetByPeer => return commons.printErr(
+                err,
+                "Socket disconnected\n",
+                .{},
+                .blue,
+            ),
+            else => return commons.printErr(
+                err,
+                "Couldn't read from socket: {}\n",
+                .{err},
+                .red,
+            ),
         };
 
         if (bytes_read == 0) break;
@@ -99,10 +103,14 @@ fn handleClientSend(self: *const Self, client: *Client) !void {
         // send necessary game info
         for (self.game_data.players.items) |p| {
             const player_packet = socket_packet.Player.init(p);
-            const player_string = std.json.Stringify.valueAlloc(self.alloc, player_packet, .{}) catch |err| {
-                commons.print("Could not stringify packet: {}\n", .{err}, .red);
-                return;
-            };
+            const player_string = std.json.Stringify.valueAlloc(self.alloc, player_packet, .{}) catch |err|
+                return commons.printErr(
+                    err,
+                    "Could not stringify packet: {}\n",
+                    .{err},
+                    .red,
+                );
+
             defer self.alloc.free(player_string);
 
             client.send(self.alloc, player_string) catch |err| switch (err) {

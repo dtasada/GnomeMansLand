@@ -16,7 +16,7 @@ pub fn init(alloc: std.mem.Allocator) !Self {
         .buttons = try ui.ButtonSet.initGeneric(
             alloc,
             .{ .top_left_x = 24, .top_left_y = 128 },
-            &[_][]const u8{"Back"},
+            &.{"Back"},
         ),
     };
 }

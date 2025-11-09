@@ -5,6 +5,7 @@ const rl = @import("raylib");
 const ui = @import("../ui.zig");
 const socket_packet = @import("../../socket_packet.zig");
 const states = @import("states.zig");
+const commons = @import("../../commons.zig");
 
 const Server = @import("../../server/Server.zig");
 const Client = @import("../Client.zig");
@@ -18,10 +19,13 @@ buttons: ui.ButtonSet,
 title_text: ui.Text,
 
 pub fn init(alloc: std.mem.Allocator) !Self {
+    const width: f32 = @floatFromInt(rl.getScreenWidth());
+    const height: f32 = @floatFromInt(rl.getScreenHeight());
+
     const nickname_input_label = try ui.Text.init(.{
         .body = "nickname: ",
-        .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0 - 120,
-        .y = 480,
+        .x = width / 2.0 - 120.0,
+        .y = height - 240.0,
     });
 
     return .{
@@ -33,7 +37,7 @@ pub fn init(alloc: std.mem.Allocator) !Self {
         .buttons = try ui.ButtonSet.initGeneric(
             alloc,
             .{ .top_left_x = 24, .top_left_y = 128 },
-            &[_][]const u8{
+            &.{
                 "Host server",
                 "Connect to server",
                 "Settings",
@@ -42,7 +46,7 @@ pub fn init(alloc: std.mem.Allocator) !Self {
         .title_text = try ui.Text.init(.{
             .body = "Gnome Man's Land",
             .font_size = .title,
-            .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0,
+            .x = width / 2.0,
             .y = 100.0,
             .anchor = .center,
         }),
@@ -54,8 +58,16 @@ pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
     self.buttons.deinit(alloc);
 }
 
+/// Deinits and reinitializes Lobby. used when resizing window.
+pub fn reinit(self: *Self, alloc: std.mem.Allocator) !void {
+    self.deinit(alloc);
+    self.* = try init(alloc);
+}
+
 pub fn update(self: *Self, game: *Game) !void {
-    rl.beginDrawing();
+    if (rl.isWindowResized())
+        try self.reinit(game.alloc);
+
     rl.clearBackground(.black);
 
     try self.buttons.update(.{

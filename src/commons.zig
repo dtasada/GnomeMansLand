@@ -1,4 +1,5 @@
 const std = @import("std");
+const rl = @import("raylib");
 
 /// Returns null-terminated string from `text`.
 /// Caller must `@ptrCast()` to cast to a `[:0]const u8`.
@@ -37,11 +38,9 @@ pub fn upper(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     return out;
 }
 
-pub fn print(
-    comptime text: []const u8,
-    args: anytype,
-    color: enum { white, red, green, blue, yellow },
-) void {
+const Color = enum { white, red, green, blue, yellow };
+
+pub fn print(comptime text: []const u8, args: anytype, color: Color) void {
     switch (color) {
         .white => {},
         .red => std.debug.print("\x1b[0;31m", .{}),
@@ -51,4 +50,14 @@ pub fn print(
     }
     std.debug.print(text, args);
     std.debug.print("\x1b[0m", .{});
+}
+
+pub inline fn printErr(
+    err: anytype,
+    comptime text: []const u8,
+    args: anytype,
+    color: Color,
+) @TypeOf(err) {
+    print(text, args, color);
+    return err;
 }

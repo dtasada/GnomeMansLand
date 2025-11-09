@@ -23,7 +23,7 @@ pub fn init(alloc: std.mem.Allocator, game: *Game) !Self {
     self.text_box_set = try ui.TextBoxSet.initGeneric(
         alloc,
         .{ .top_left_x = 24, .top_left_y = 128 },
-        &[_]ui.BoxLabel{
+        &.{
             .{ .label = "Server address: ", .max_len = 15, .default_value = @constCast(game.settings.multiplayer.server_host) },
             .{ .label = "Server port: ", .max_len = 5, .default_value = self.server_port_string_buf[0 .. self.server_port_string_buf.len - 1] }, // buf.len - 1 bc discard sentinel
         },
@@ -34,7 +34,7 @@ pub fn init(alloc: std.mem.Allocator, game: *Game) !Self {
             .top_left_x = self.text_box_set.getHitbox().x,
             .top_left_y = self.text_box_set.getHitbox().y + self.text_box_set.getHitbox().height + 16.0,
         },
-        &[_][]const u8{
+        &.{
             "Join server",
             "Back",
         },
@@ -62,7 +62,7 @@ pub fn update(self: *Self, game: *Game) !void {
     });
 
     // bro do not touch this code this is so fragile bro. null termination sucks
-    const len = std.mem.indexOf(u8, &self.server_port_string_buf, &[_]u8{0}) orelse 0;
+    const len = std.mem.indexOf(u8, &self.server_port_string_buf, &.{0}) orelse 0;
     if (len != 0) {
         game.settings.multiplayer.server_port = std.fmt.parseUnsigned(u16, @ptrCast(self.server_port_string_buf[0..len]), 10) catch def: {
             var port_box = self.text_box_set.boxes[1];

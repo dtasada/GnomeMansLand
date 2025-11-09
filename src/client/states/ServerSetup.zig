@@ -25,7 +25,7 @@ pub fn init(alloc: std.mem.Allocator, game: *Game) !Self {
     self.text_box_set = try ui.TextBoxSet.initGeneric(
         alloc,
         .{ .top_left_x = 24, .top_left_y = 128 },
-        &[_]ui.BoxLabel{
+        &.{
             .{ .label = "Server port: ", .max_len = 5, .default_value = "42069" },
             .{ .label = "Max players:", .max_len = 1, .default_value = "4" },
         },
@@ -36,7 +36,7 @@ pub fn init(alloc: std.mem.Allocator, game: *Game) !Self {
             .top_left_x = self.text_box_set.getHitbox().x,
             .top_left_y = self.text_box_set.getHitbox().y + self.text_box_set.getHitbox().height + 16.0,
         },
-        &[_][]const u8{
+        &.{
             "Create server",
             "Back",
         },
@@ -110,7 +110,7 @@ pub fn update(self: *Self, game: *Game) !void {
     });
 
     // bro do not touch this code this is so fragile bro. null termination sucks
-    if (std.mem.indexOf(u8, &self.port_string_buf, &[_]u8{0})) |len| {
+    if (std.mem.indexOf(u8, &self.port_string_buf, &.{0})) |len| {
         game.settings.multiplayer.server_port = std.fmt.parseUnsigned(u16, @ptrCast(self.port_string_buf[0..len]), 10) catch def: {
             var port_box = self.text_box_set.boxes[1];
             var error_text = try ui.Text.init(.{

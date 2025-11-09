@@ -16,6 +16,7 @@ pub fn openSettings(game: *Game) void {
 }
 
 pub fn openLobby(game: *Game) void {
+    game.lobby.reinit(game.alloc) catch {};
     game.state = .lobby;
 }
 

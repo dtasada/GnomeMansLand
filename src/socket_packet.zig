@@ -73,7 +73,11 @@ pub const WorldDataChunk = struct {
 
         chunks[i] = .{
             .descriptor = std.fmt.allocPrint(alloc, "world_data_chunk-{}", .{i}) catch |err| {
-                commons.print("Couldn't create world_data_chunk-{{}} descriptor: {}\n", .{err}, .red);
+                commons.print(
+                    "Couldn't create world_data_chunk-{{}} descriptor: {}\n",
+                    .{err},
+                    .red,
+                );
                 return;
             },
             .chunk_index = @intCast(i),

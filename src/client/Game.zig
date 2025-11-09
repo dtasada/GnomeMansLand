@@ -18,7 +18,7 @@ const ui = @import("ui.zig");
 
 const Self = @This();
 
-_gpa: std.heap.GeneralPurposeAllocator(.{}),
+_gpa: std.heap.GeneralPurposeAllocator(.{ .safety = true }),
 _settings_parsed: std.json.Parsed(Settings),
 alloc: std.mem.Allocator,
 settings: Settings,
@@ -30,7 +30,14 @@ mouse_is_enabled: bool,
 client: ?*Client,
 server: ?*Server,
 
-state: enum { lobby, game, lobby_settings, client_setup, server_setup },
+state: enum {
+    lobby,
+    game,
+    lobby_settings,
+    client_setup,
+    server_setup,
+},
+
 lobby: states.Lobby,
 lobby_settings: states.LobbySettings,
 client_setup: states.ClientSetup,
@@ -43,13 +50,15 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
     var self: *Self = try alloc.create(Self);
     errdefer alloc.destroy(self);
 
-    self._gpa = .init;
+    self._gpa = .{};
     self.alloc = self._gpa.allocator();
 
     self._settings_parsed = try parseSettings(self.alloc);
     errdefer self._settings_parsed.deinit();
 
     self.settings = self._settings_parsed.value;
+
+    self.setupRaylib();
 
     self.camera = null;
 
@@ -76,6 +85,7 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+    defer rl.closeWindow();
     ui.chalk_font.unload();
     ui.gwathlyn_font.unload();
 
@@ -94,14 +104,27 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     defer _ = self._gpa.deinit();
     defer self._settings_parsed.deinit();
 
-    const settings_string: []u8 = std.json.Stringify.valueAlloc(self.alloc, self._settings_parsed.value, .{ .whitespace = .indent_4 }) catch |err| {
-        commons.print("Couldn't save settings to './settings.json': {}\n", .{err}, .red);
+    const settings_string: []u8 = std.json.Stringify.valueAlloc(
+        self.alloc,
+        self._settings_parsed.value,
+        .{ .whitespace = .indent_4 },
+    ) catch |err| {
+        commons.print(
+            "Couldn't save settings to './settings.json': {}\n",
+            .{err},
+            .red,
+        );
         return;
     };
+
     defer self.alloc.free(settings_string);
 
-    const settings_file: std.fs.File = std.fs.cwd().createFile("./settings.json", .{}) catch |err| {
-        commons.print("Couldn't save settings to './settings.json': {}\n", .{err}, .red);
+    const settings_file = std.fs.cwd().createFile("./settings.json", .{}) catch |err| {
+        commons.print(
+            "Couldn't save settings to './settings.json': {}\n",
+            .{err},
+            .red,
+        );
         return;
     };
 
@@ -109,13 +132,50 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     var file_writer = settings_file.writer(&settings_buf);
     const interface = &file_writer.interface;
     interface.writeAll(settings_string) catch |err| {
-        commons.print("Couldn't save settings to './settings.json': {}\n", .{err}, .red);
+        commons.print(
+            "Couldn't save settings to './settings.json': {}\n",
+            .{err},
+            .red,
+        );
         return;
     };
+
     interface.flush() catch |err| {
-        commons.print("Couldn't save settings to './settings.json': {}\n", .{err}, .red);
+        commons.print(
+            "Couldn't save settings to './settings.json': {}\n",
+            .{err},
+            .red,
+        );
         return;
     };
+}
+
+/// Set up Raylib window and corresponding settings
+fn setupRaylib(self: *const Self) void {
+    rl.setConfigFlags(.{
+        .vsync_hint = true,
+        .window_resizable = true,
+    });
+
+    rl.setTraceLogLevel(.warning);
+    rl.initWindow(
+        self.settings.video.resolution[0],
+        self.settings.video.resolution[1],
+        "Gnome Man's Land",
+    );
+
+    rl.setExitKey(.null);
+    rl.setTargetFPS(60);
+
+    // Draw a blank frame and then resize to trigger UI layout fix.
+    // This ensures the window is fully processed by the OS before we send a resize event.
+    rl.beginDrawing();
+    rl.clearBackground(.black);
+    rl.endDrawing();
+    const width = rl.getScreenWidth();
+    const height = rl.getScreenHeight();
+    rl.setWindowSize(width, height + 1);
+    rl.setWindowSize(width, height);
 }
 
 /// wraps mouse around screen so the cursor won't leave the window

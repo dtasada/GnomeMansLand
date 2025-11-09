@@ -157,10 +157,13 @@ pub const WorldData = struct {
         const max_y = @min(min_y + MODEL_RESOLUTION, self.size.y);
 
         // Add bounds checking
-        if (min_x >= self.size.x or min_y >= self.size.y) {
-            commons.print("Model generation bounds error: min_x={}, min_y={}, size={}x{}\n", .{ min_x, min_y, self.size.x, self.size.y }, .red);
-            return;
-        }
+        if (min_x >= self.size.x or min_y >= self.size.y)
+            return commons.printErr(
+                error.ModelGenBoundsError,
+                "Model generation bounds error: min_x={}, min_y={}, size={}x{}\n",
+                .{ min_x, min_y, self.size.x, self.size.y },
+                .red,
+            );
 
         var image = rl.Image.genColor(
             @intCast(MODEL_RESOLUTION),
@@ -199,23 +202,34 @@ pub const WorldData = struct {
             }
         }
 
-        const tex = rl.Texture.fromImage(image) catch |err| {
-            commons.print("Failed to create texture: {}\n", .{err}, .red);
-            return;
-        };
+        const tex = rl.Texture.fromImage(image) catch |err|
+            return commons.printErr(
+                err,
+                "Failed to create texture: {}\n",
+                .{err},
+                .red,
+            );
+
+        errdefer tex.unload();
 
         const model = &self.models[model_index];
-        const mesh = self.genTerrainMesh(min_x, max_x, min_y, max_y) catch |err| {
-            commons.print("Failed to generate terrain mesh for chunk {}: {}\n", .{ model_index, err }, .red);
-            tex.unload();
-            return;
-        };
+        const mesh = self.genTerrainMesh(min_x, max_x, min_y, max_y) catch |err|
+            return commons.printErr(
+                err,
+                "Failed to generate terrain mesh for chunk {}: {}\n",
+                .{ model_index, err },
+                .red,
+            );
 
-        model.* = rl.Model.fromMesh(mesh) catch |err| {
-            commons.print("Failed to create model from mesh for chunk {}: {}\n", .{ model_index, err }, .red);
-            tex.unload();
-            return;
-        };
+        errdefer mesh.unload();
+
+        model.* = rl.Model.fromMesh(mesh) catch |err|
+            return commons.printErr(
+                err,
+                "Failed to create model from mesh for chunk {}: {}\n",
+                .{ model_index, err },
+                .red,
+            );
 
         model.*.?.materials[0].maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = tex;
         model.*.?.materials[0].shader = light_shader;

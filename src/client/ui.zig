@@ -555,7 +555,11 @@ pub const TextBoxSet = struct {
     /// Pass in references to strings. Writes sentinel at the end.
     pub fn update(self: *TextBoxSet, references: []const []u8) !void {
         if (references.len != self.boxes.len) {
-            commons.print("Amount of references passed to TextBoxSet.update must equal amount of labels passed in TextBoxSet.init\n", .{}, .red);
+            commons.print(
+                "Amount of references passed to TextBoxSet.update must equal amount of labels passed in TextBoxSet.init\n",
+                .{},
+                .red,
+            );
             return error.TextBoxSetNotMatching;
         }
 
