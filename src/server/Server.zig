@@ -15,7 +15,9 @@ const Self = @This();
 var polling_rate: u64 = undefined;
 
 gpa: std.heap.DebugAllocator(.{}),
+tsa: std.heap.ThreadSafeAllocator,
 alloc: std.mem.Allocator,
+
 sock: network.Socket,
 clients: std.ArrayList(*Client),
 listen_thread: std.Thread,
@@ -204,8 +206,8 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     self.gpa = .init;
     errdefer _ = self.gpa.deinit();
 
-    var tsa: std.heap.ThreadSafeAllocator = .{ .child_allocator = self.gpa.allocator() };
-    self.alloc = tsa.allocator();
+    self.tsa = .{ .child_allocator = self.gpa.allocator() };
+    self.alloc = self.tsa.allocator();
 
     // test test
     std.debug.print("before\n", .{});
