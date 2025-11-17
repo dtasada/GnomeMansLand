@@ -1,3 +1,5 @@
+//! Utility library for common (shared) functionality between different modules.
+
 const std = @import("std");
 const rl = @import("raylib");
 
@@ -11,7 +13,8 @@ pub inline fn toSentinel(text: []const u8, buf: [:0]u8) void {
     // return buf[0..n :0];
 }
 
-pub fn v2(T: type) type {
+/// 2-dimensional vector type.
+pub fn v2(comptime T: type) type {
     return struct {
         const Self = @This();
         x: T,
@@ -30,16 +33,9 @@ pub fn v2(T: type) type {
 pub const v2f = v2(f32);
 pub const v2u = v2(u32);
 
-pub fn upper(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
-    var out = try allocator.alloc(u8, s.len);
-    for (s, 0..) |ch, i| {
-        out[i] = std.ascii.toUpper(ch);
-    }
-    return out;
-}
-
 const Color = enum { white, red, green, blue, yellow };
 
+/// Prints `text` formatted with `args` to standard I/O. Formats the message with `Color`
 pub fn print(comptime text: []const u8, args: anytype, color: Color) void {
     switch (color) {
         .white => {},
@@ -52,6 +48,8 @@ pub fn print(comptime text: []const u8, args: anytype, color: Color) void {
     std.debug.print("\x1b[0m", .{});
 }
 
+/// Prints an error `err` with `text` formatted with `args` to standard I/O, and returns `err`.
+/// Formats the message with `Color`.
 pub inline fn printErr(
     err: anytype,
     comptime text: []const u8,
@@ -61,3 +59,20 @@ pub inline fn printErr(
     print(text, args, color);
     return err;
 }
+
+/// Sub-container for server-specific configuration
+pub const ServerSettings = struct {
+    max_players: u32,
+    port: u16,
+    polling_rate: u64,
+
+    world_generation: struct {
+        resolution: [2]u32,
+        seed: ?u32 = null,
+        octaves: i32,
+        persistence: f32,
+        lacunarity: f32,
+        frequency: f32,
+        amplitude: f32,
+    },
+};

@@ -2,14 +2,14 @@ const std = @import("std");
 
 const rl = @import("raylib");
 
-const ui = @import("../ui.zig");
-const socket_packet = @import("../../socket_packet.zig");
+const ui = @import("ui.zig");
+const socket_packet = @import("socket_packet");
 const states = @import("states.zig");
-const commons = @import("../../commons.zig");
+const commons = @import("commons");
 
-const Server = @import("../../server/Server.zig");
-const Client = @import("../Client.zig");
-const Game = @import("../Game.zig");
+const Server = @import("server");
+const Client = @import("client");
+const Game = @import("game");
 
 const Self = @This();
 

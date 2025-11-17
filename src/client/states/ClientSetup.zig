@@ -1,11 +1,11 @@
 const std = @import("std");
 const rl = @import("raylib");
 
-const ui = @import("../ui.zig");
-const commons = @import("../../commons.zig");
+const ui = @import("ui.zig");
+const commons = @import("commons");
 const states = @import("states.zig");
 
-const Game = @import("../Game.zig");
+const Game = @import("game");
 
 const Self = @This();
 

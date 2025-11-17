@@ -1,7 +1,7 @@
 const rl = @import("raylib");
 const std = @import("std");
 
-const commons = @import("../commons.zig");
+const commons = @import("commons");
 
 const MAX_LEN: usize = 64;
 

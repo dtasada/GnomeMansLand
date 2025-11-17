@@ -2,16 +2,15 @@ const std = @import("std");
 
 const rl = @import("raylib");
 
-const rcamera = @import("../rcamera.zig");
-const commons = @import("../../commons.zig");
-const ui = @import("../ui.zig");
-const socket_packet = @import("../../socket_packet.zig");
+const commons = @import("commons");
+const ui = @import("ui.zig");
+const socket_packet = @import("socket_packet");
+const rcamera = Game.rcamera;
 
-const Light = @import("../Light.zig");
-const _Game = @import("../Game.zig");
+const Game = @import("game");
 
 /// input handling
-fn handleKeys(game: *_Game) !void {
+fn handleKeys(game: *Game) !void {
     // pan the camera with middle mouse
     if (game.camera) |*camera| {
         if (rl.isMouseButtonDown(.middle)) {
@@ -99,7 +98,7 @@ fn toggleMouse(is_enabled: *bool) void {
 }
 
 /// gets equivalent in-world position from 2d cursor position
-fn getMouseToWorld(game: *_Game) ?rl.Vector3 {
+fn getMouseToWorld(game: *Game) ?rl.Vector3 {
     if (game.camera) |camera| {
         if (game.client) |client| {
             if (client.game_data.world_data) |world_data| {
@@ -123,7 +122,7 @@ fn getMouseToWorld(game: *_Game) ?rl.Vector3 {
 }
 
 /// resets camera back to the middle of the world
-fn resetCamera(game: *_Game) void {
+fn resetCamera(game: *Game) void {
     if (game.client) |client| {
         if (client.game_data.world_data) |world_data| {
             // Use more reasonable camera positioning to avoid precision issues
@@ -144,7 +143,7 @@ fn resetCamera(game: *_Game) void {
     }
 }
 
-fn drawUi(game: *_Game) void {
+fn drawUi(game: *Game) void {
     if (game.camera) |camera| {
         rl.drawText(rl.textFormat("Camera x: %.1f, y: %.1f, z: %.1f", .{
             camera.position.x,
@@ -180,7 +179,7 @@ fn drawUi(game: *_Game) void {
     }
 }
 
-pub fn update(game: *_Game) !void {
+pub fn update(game: *Game) !void {
     // loading screen
     if (game.client) |client| {
         if (client.game_data.world_data) |*world_data| {
@@ -221,7 +220,7 @@ pub fn update(game: *_Game) !void {
     try handleKeys(game);
 
     if (game.camera) |*camera|
-        Light.updateLights(camera, game.light_shader, game.lights);
+        Game.Light.updateLights(camera, game.light_shader, game.lights);
 
     // render step
     rl.beginDrawing();

@@ -1,12 +1,13 @@
 //! Container for game data owned by the client
 const std = @import("std");
 const rl = @import("raylib");
-const commons = @import("../commons.zig");
+const commons = @import("commons");
 
-const socket_packet = @import("../socket_packet.zig");
+const socket_packet = @import("socket_packet");
 
-const Settings = @import("Settings.zig");
-const Player = @import("../server/GameData.zig").Player;
+const Settings = @import("client").Settings;
+
+const Player = @import("server").GameData.Player;
 
 pub const WorldData = @import("WorldData.zig");
 

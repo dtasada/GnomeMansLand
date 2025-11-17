@@ -1,7 +1,9 @@
 //! Namespace for JSON request types
 const std = @import("std");
-const ServerGameData = @import("server/GameData.zig");
-const commons = @import("commons.zig");
+
+const commons = @import("commons");
+
+const ServerGameData = @import("server").GameData;
 
 pub const ClientConnect = struct {
     descriptor: []const u8 = "client_connect",

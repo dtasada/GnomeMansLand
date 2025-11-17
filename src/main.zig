@@ -1,11 +1,10 @@
 //! Program entry point
 
-const rl = @import("raylib");
 const std = @import("std");
 
-const commons = @import("commons.zig");
+const commons = @import("commons");
 
-const Game = @import("client/Game.zig");
+const Game = @import("game");
 
 pub fn main() !void {
     // Create allocator for game object

@@ -1,9 +1,7 @@
 //! Container for game configuration pulled from config.json
 const std = @import("std");
 
-const commons = @import("../commons.zig");
-
-const ServerSettings = @import("../server/Settings.zig");
+const commons = @import("commons");
 
 video: struct {
     resolution: [2]i32,
@@ -16,7 +14,7 @@ multiplayer: struct {
     polling_rate: u64, // in milliseconds
 },
 
-server: ServerSettings,
+server: commons.ServerSettings,
 
 pub fn print(self: *const @This()) void {
     commons.print("video: struct {{\n", .{}, .white);

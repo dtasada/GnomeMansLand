@@ -3,12 +3,12 @@ const std = @import("std");
 const builtin = @import("builtin");
 const network = @import("network");
 
-const socket_packet = @import("../socket_packet.zig");
-const commons = @import("../commons.zig");
+const socket_packet = @import("socket_packet");
 
-const ServerGameData = @import("GameData.zig");
-const Settings = @import("../client/Settings.zig");
-const ServerSettings = @import("Settings.zig");
+const commons = @import("commons");
+
+pub const GameData = @import("GameData.zig");
+pub const ServerSettings = commons.ServerSettings;
 
 const Self = @This();
 
@@ -20,7 +20,7 @@ sock: network.Socket,
 clients: std.ArrayList(*Client),
 listen_thread: std.Thread,
 running: std.atomic.Value(bool),
-game_data: ServerGameData,
+game_data: GameData,
 settings: ServerSettings,
 
 socket_packets: struct {
@@ -73,12 +73,14 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
     while (self.running.load(.monotonic)) : (std.Thread.sleep(polling_rate * std.time.ns_per_ms)) {
         const bytes_read = client.sock.receive(buf) catch |err| switch (err) {
             error.WouldBlock => continue,
-            error.ConnectionResetByPeer => return commons.printErr(
-                err,
-                "Socket disconnected\n",
-                .{},
-                .blue,
-            ),
+            error.ConnectionResetByPeer => {
+                commons.print(
+                    "Socket disconnected\n",
+                    .{},
+                    .blue,
+                );
+                return;
+            },
             else => return commons.printErr(
                 err,
                 "Couldn't read from socket: {}\n",
@@ -205,7 +207,7 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     self.clients = try std.ArrayList(*Client).initCapacity(self.alloc, self.settings.max_players);
     errdefer self.clients.deinit(self.alloc);
 
-    self.game_data = try ServerGameData.init(self.alloc, self.settings);
+    self.game_data = try GameData.init(self.alloc, self.settings);
     errdefer self.game_data.deinit(self.alloc);
 
     self.socket_packets = .{
@@ -301,7 +303,7 @@ fn listen(self: *Self) !void {
 }
 
 fn appendPlayer(self: *Self, connect_request: socket_packet.ClientConnect) !void {
-    self.game_data.players.appendAssumeCapacity(ServerGameData.Player.init(
+    self.game_data.players.appendAssumeCapacity(GameData.Player.init(
         @intCast(self.game_data.players.items.len),
         try self.alloc.dupe(u8, connect_request.nickname), // duplicate nickname bc threads
     ));

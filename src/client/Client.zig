@@ -3,11 +3,12 @@ const std = @import("std");
 const builtin = @import("builtin");
 const network = @import("network");
 
-const commons = @import("../commons.zig");
-const socket_packet = @import("../socket_packet.zig");
+const commons = @import("commons");
+const socket_packet = @import("socket_packet");
 
-const GameData = @import("GameData.zig");
-const Settings = @import("Settings.zig");
+const GameData = @import("game").GameData;
+
+pub const Settings = @import("Settings.zig");
 
 const Self = @This();
 

@@ -4,17 +4,18 @@ const std = @import("std");
 const rg = @import("raygui");
 const rl = @import("raylib");
 
-const states = @import("states/states.zig");
-const commons = @import("../commons.zig");
-const socket_packet = @import("../socket_packet.zig");
-const rcamera = @import("rcamera.zig");
-const ui = @import("ui.zig");
+const states = @import("states");
+const commons = @import("commons");
+const socket_packet = @import("socket_packet");
+const ui = states.ui;
 
-const Server = @import("../server/Server.zig");
-const Client = @import("Client.zig");
-const GameData = @import("GameData.zig");
-const Light = @import("Light.zig");
-const Settings = @import("Settings.zig");
+const Server = @import("server");
+const Client = @import("client");
+
+pub const Settings = Client.Settings;
+pub const GameData = @import("GameData.zig");
+pub const Light = @import("Light.zig");
+pub const rcamera = @import("rcamera.zig");
 
 const Self = @This();
 

@@ -5,9 +5,9 @@ const c = @cImport({
 
 const rl = @import("raylib");
 
-const commons = @import("../commons.zig");
-const socket_packet = @import("../socket_packet.zig");
-const Settings = @import("Settings.zig");
+const commons = @import("commons");
+const socket_packet = @import("socket_packet");
+const Settings = @import("client").Settings;
 
 const Self = @This();
 
@@ -120,11 +120,7 @@ pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
     alloc.free(self.models);
 }
 
-pub fn genModels(
-    self: *Self,
-    settings: Settings,
-    light_shader: rl.Shader,
-) !void {
+pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
     for (0..self.models.len) |model_index| {
         const chunks_x = (self.size.x + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
         const chunk_x = model_index % chunks_x;
@@ -156,7 +152,9 @@ pub fn genModels(
             for (min_x..max_x) |x| {
                 if (x >= self.size.x or y >= self.size.y) continue;
 
-                const height = (self.getHeight(x, y) + settings.server.world_generation.amplitude) / (2 * settings.server.world_generation.amplitude);
+                // TODOO: move worldgen settings to server/client shared
+                const AMPLITUDE = 180;
+                const height = (self.getHeight(x, y) + AMPLITUDE) / (2 * AMPLITUDE);
                 const tile: Rgb =
                     if (height <= TileData.water)
                         Color.WATER_LOW.lerp(Color.WATER_HIGH, height / TileData.water)

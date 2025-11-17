@@ -2,10 +2,10 @@ const std = @import("std");
 
 const rl = @import("raylib");
 
-const ui = @import("../ui.zig");
+const ui = @import("ui.zig");
 const states = @import("states.zig");
 
-const Game = @import("../Game.zig");
+const Game = @import("game");
 
 const Self = @This();
 
