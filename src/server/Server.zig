@@ -11,6 +11,7 @@ const Settings = @import("../client/Settings.zig");
 const ServerSettings = @import("Settings.zig");
 
 const Self = @This();
+
 var polling_rate: u64 = undefined;
 
 _gpa: std.heap.GeneralPurposeAllocator(.{}),

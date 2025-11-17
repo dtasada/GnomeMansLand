@@ -109,7 +109,7 @@ pub fn update(self: *Self, game: *Game) !void {
     });
 
     // bro do not touch this code this is so fragile bro. null termination sucks
-    if (std.mem.indexOf(u8, &self.port_string_buf, &.{0})) |len| {
+    if (std.mem.indexOfScalar(u8, &self.port_string_buf, 0)) |len| {
         game.settings.multiplayer.server_port = std.fmt.parseUnsigned(
             u16,
             @ptrCast(self.port_string_buf[0..len]),

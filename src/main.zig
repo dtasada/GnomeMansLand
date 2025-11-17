@@ -5,7 +5,7 @@ const std = @import("std");
 
 const commons = @import("commons.zig");
 
-const Game = @import("Client/Game.zig");
+const Game = @import("client/Game.zig");
 
 pub fn main() !void {
     // Create allocator for game object

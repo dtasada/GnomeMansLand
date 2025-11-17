@@ -90,10 +90,12 @@ fn listen(self: *Self) !void {
                 commons.print("Socket disconnected\n", .{}, .blue);
                 return;
             },
-            else => {
-                commons.print("Couldn't read from socket: {}\n", .{err}, .red);
-                return err;
-            },
+            else => return commons.printErr(
+                err,
+                "Couldn't read from socket: {}\n",
+                .{err},
+                .red,
+            ),
         };
 
         if (bytes_read == 0) break;

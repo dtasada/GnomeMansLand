@@ -5,7 +5,7 @@ const Self = @This();
 p: std.ArrayList(i32), // Permutation vector
 
 pub fn init(alloc: std.mem.Allocator, seed: u32) !Self {
-    var self = Self{ .p = try std.ArrayList(i32).initCapacity(alloc, 256) };
+    var self: Self = .{ .p = try std.ArrayList(i32).initCapacity(alloc, 256) };
     try self.p.resize(alloc, 256);
 
     // Fill using for loop with enumerate

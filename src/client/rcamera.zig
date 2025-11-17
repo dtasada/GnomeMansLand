@@ -10,7 +10,7 @@ const CAMERA_ROTATION_SPEED = 0.03;
 const CAMERA_PAN_SPEED = 0.2;
 const CAMERA_MOUSE_MOVE_SENSITIVITY = 0.003; // Camera mouse movement sensitivity
 
-// Camera orbital speed in CAMERA_ORBITAL mode
+/// Camera orbital speed in CAMERA_ORBITAL mode
 const CAMERA_ORBITAL_SPEED = 0.5; // Radians per second
 
 pub fn getForward(camera: *rl.Camera) rl.Vector3 {
@@ -29,11 +29,11 @@ pub fn getRight(camera: *rl.Camera) rl.Vector3 {
     return forward.crossProduct(up).normalize();
 }
 
-// Rotates the camera around its right vector, pitch is "looking up and down"
-//  - lockView prevents camera overrotation (aka "somersaults")
-//  - rotateAroundTarget defines if rotation is around target or around its position
-//  - rotateUp rotates the up direction as well (typically only usefull in CAMERA_FREE)
-// NOTE: angle must be provided in radians
+/// Rotates the camera around its right vector, pitch is "looking up and down"
+///  - lockView prevents camera overrotation (aka "somersaults")
+///  - rotateAroundTarget defines if rotation is around target or around its position
+///  - rotateUp rotates the up direction as well (typically only usefull in CAMERA_FREE)
+/// NOTE: angle must be provided in radians
 fn pitch(camera: *rl.Camera, angle_: f32, lockView: bool, rotateAroundTarget: bool, rotateUp: bool) void {
     // Up direction
     const up = getUp(camera);
@@ -80,10 +80,10 @@ fn pitch(camera: *rl.Camera, angle_: f32, lockView: bool, rotateAroundTarget: bo
     }
 }
 
-// Rotates the camera around its up vector
-// Yaw is "looking left and right"
-// If rotateAroundTarget is false, the camera rotates around its position
-// Note: angle must be provided in radians
+/// Rotates the camera around its up vector
+/// Yaw is "looking left and right"
+/// If rotateAroundTarget is false, the camera rotates around its position
+/// Note: angle must be provided in radians
 fn yaw(camera: *rl.Camera, angle: f32, rotateAroundTarget: bool) void {
     // Rotation axis
     const up = getUp(camera);
@@ -100,9 +100,9 @@ fn yaw(camera: *rl.Camera, angle: f32, rotateAroundTarget: bool) void {
     }
 }
 
-// Rotates the camera around its forward vector
-// Roll is "turning your head sideways to the left or right"
-// Note: angle must be provided in radians
+/// Rotates the camera around its forward vector
+/// Roll is "turning your head sideways to the left or right"
+/// Note: angle must be provided in radians
 fn roll(camera: *rl.Camera, angle: f32) void {
     // Rotation axis
     const forward = getForward(camera);
@@ -111,7 +111,7 @@ fn roll(camera: *rl.Camera, angle: f32) void {
     camera.up = camera.up.rotateByAxisAngle(forward, angle);
 }
 
-// Moves the camera target in its current right direction
+/// Moves the camera target in its current right direction
 fn moveRight(camera: *rl.Camera, distance: f32, moveInWorldPlane: bool) void {
     var right = getRight(camera);
 
@@ -129,7 +129,7 @@ fn moveRight(camera: *rl.Camera, distance: f32, moveInWorldPlane: bool) void {
     camera.target = camera.target.add(right);
 }
 
-// Moves the camera in its up direction
+/// Moves the camera in its up direction
 fn moveUp(camera: *rl.Camera, distance: f32) void {
     const up = getUp(camera).scale(distance);
 
@@ -138,7 +138,7 @@ fn moveUp(camera: *rl.Camera, distance: f32) void {
     camera.target = camera.target.add(up);
 }
 
-// Moves the camera in its forward direction
+/// Moves the camera in its forward direction
 fn moveForward(camera: *rl.Camera, distance: f32, moveInWorldPlane: bool) void {
     var forward = getForward(camera);
 
@@ -156,7 +156,7 @@ fn moveForward(camera: *rl.Camera, distance: f32, moveInWorldPlane: bool) void {
     camera.target = camera.target.add(forward);
 }
 
-// Moves the camera position closer/farther to/from the camera target
+/// Moves the camera position closer/farther to/from the camera target
 fn moveToTarget(camera: *rl.Camera, delta: f32) void {
     var distance = camera.position.distance(camera.target);
 

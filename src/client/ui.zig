@@ -48,7 +48,7 @@ pub const Button = struct {
             text_color: rl.Color = .white,
         },
     ) !Button {
-        var self = Button{
+        var self: Button = .{
             .text = try Text.init(.{
                 .body = settings.text,
                 .x = settings.x,
@@ -116,7 +116,7 @@ pub const ButtonSet = struct {
     buttons: []Button,
 
     pub fn initSpecific(alloc: std.mem.Allocator, buttons: []Button) !ButtonSet {
-        const self = ButtonSet{ .buttons = try alloc.alloc(Button, buttons.len) };
+        const self: ButtonSet = .{ .buttons = try alloc.alloc(Button, buttons.len) };
 
         @memcpy(self.buttons, buttons);
 
@@ -138,7 +138,7 @@ pub const ButtonSet = struct {
         },
         button_texts: []const []const u8,
     ) !ButtonSet {
-        const self = ButtonSet{ .buttons = try alloc.alloc(Button, button_texts.len) };
+        const self: ButtonSet = .{ .buttons = try alloc.alloc(Button, button_texts.len) };
         errdefer alloc.free(self.buttons);
 
         for (button_texts, 0..) |text, i|
@@ -302,7 +302,7 @@ pub const TextBox = struct {
             .y = settings.y,
             .body = settings.label,
         });
-        var self = TextBox{
+        var self: TextBox = .{
             .inner_text = try TextVariable.init(.{
                 .x = getRight(label.hitbox) + 16.0,
                 .y = settings.y,
@@ -486,7 +486,7 @@ pub const TextBoxSet = struct {
     labels: []Text,
 
     pub fn initSpecific(alloc: std.mem.Allocator, boxes: []TextBox) !TextBoxSet {
-        const self = TextBoxSet{ .boxes = try alloc.alloc(TextBox, boxes.len) };
+        const self: TextBoxSet = .{ .boxes = try alloc.alloc(TextBox, boxes.len) };
 
         @memcpy(self.boxes, boxes);
 
@@ -508,10 +508,11 @@ pub const TextBoxSet = struct {
         },
         labels: []const BoxLabel,
     ) !TextBoxSet {
-        const self = TextBoxSet{
+        const self: TextBoxSet = .{
             .boxes = try alloc.alloc(TextBox, labels.len),
             .labels = try alloc.alloc(Text, labels.len),
         };
+
         errdefer alloc.free(self.boxes);
         errdefer alloc.free(self.labels);
 

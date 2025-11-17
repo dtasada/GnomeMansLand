@@ -48,8 +48,8 @@ pub fn hostServer(game: *Game) !void {
 
     game.server = try Server.init(game.alloc, game.settings.server);
 
-    const wait_for_server_thread = try std.Thread.spawn(.{}, waitForServer, .{game});
-    wait_for_server_thread.detach();
+    const t = try std.Thread.spawn(.{}, waitForServer, .{game});
+    t.detach();
 }
 
 fn waitForServer(game: *Game) !void {

@@ -2,7 +2,7 @@
     .name = .gnome_mans_land,
     .version = "0.0.0",
     .fingerprint = 0x6b1dca5a45abafa0,
-    .minimum_zig_version = "0.15.1",
+    .minimum_zig_version = "0.15.2",
 
     .dependencies = .{
         .raylib_zig = .{

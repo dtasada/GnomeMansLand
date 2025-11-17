@@ -286,7 +286,8 @@ fn handleKeys(self: *Self) !void {
         if (rl.isMouseButtonDown(.right)) {
             centerMouse();
             rcamera.update(camera, .third_person);
-        } else if (!self.mouse_is_enabled) toggleMouse(&self.mouse_is_enabled);
+        } else if (!self.mouse_is_enabled)
+            toggleMouse(&self.mouse_is_enabled);
 
         if (rl.isMouseButtonPressed(.left)) {
             if (self.client) |client| {
@@ -395,11 +396,11 @@ pub fn loop(self: *Self) !void {
                                     @divFloor(100 * world_data._height_map_filled, world_data.height_map.len),
                                 })
                             else if (!world_data.allModelsGenerated()) blk: {
-                                world_data.genModel(self.settings, self.light_shader) catch |err| {
+                                world_data.genModels(self.alloc, self.settings, self.light_shader) catch |err| {
                                     commons.print("Failed to generate model: {}", .{err}, .red);
                                 };
                                 break :blk try std.fmt.bufPrint(&buf, "Generating world models ({}%)...", .{
-                                    @divFloor(100 * world_data.models_generated, world_data.models.len),
+                                    @divFloor(100 * world_data.models_generated.load(.monotonic), world_data.models.len),
                                 });
                             } else unreachable;
 

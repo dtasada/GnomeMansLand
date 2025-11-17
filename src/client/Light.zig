@@ -20,10 +20,10 @@ positionLoc: i32,
 targetLoc: i32,
 colorLoc: i32,
 
-pub fn init(type_: LightType, position: rl.Vector3, target: rl.Vector3, color: rl.Color, intensity: f32, shader: rl.Shader) Self {
-    var light = Self{
+pub fn init(@"type": LightType, position: rl.Vector3, target: rl.Vector3, color: rl.Color, intensity: f32, shader: rl.Shader) Self {
+    var light: Self = .{
         .enabled = true,
-        .type = type_,
+        .type = @"type",
         .position = position,
         .target = target,
         .color = color,
