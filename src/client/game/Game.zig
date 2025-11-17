@@ -69,45 +69,55 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+    // Defer closing the window to the very end of the application's lifecycle.
     defer rl.closeWindow();
 
+    // Defer the final memory cleanup in LIFO order. This will be the last block to execute.
+    // 3. Destroy the Game object itself using the original allocator.
+    defer alloc.destroy(self);
+    // 2. Deinitialize the GeneralPurposeAllocator, which frees self.alloc.
+    defer _ = self._gpa.deinit();
+    // 1. Deinitialize the parsed settings structure.
+    defer self._settings_parsed.deinit();
+
+    // 1. Deinitialize all game states and their UI components.
     self.state.deinit(self.alloc);
 
+    // 2. Unload fonts now that no UI components are using them.
     ui.chalk_font.unload();
     ui.gwathlyn_font.unload();
 
+    // 3. Deinitialize client and server if they exist.
     if (self.client) |c| c.deinit(self.alloc);
     if (self.server) |s| s.deinit(self.alloc);
 
+    // 4. Deinitialize other game resources.
     self.lights.deinit(self.alloc);
     self.light_shader.unload();
 
-    defer alloc.destroy(self);
-    defer _ = self._gpa.deinit();
-    defer self._settings_parsed.deinit();
-
+    // 5. Try to save settings to file. This uses self.alloc, which is still valid.
     const settings_string: []u8 = std.json.Stringify.valueAlloc(
         self.alloc,
-        self._settings_parsed.value,
+        self.settings,
         .{ .whitespace = .indent_4 },
     ) catch |err| {
         commons.print(
-            "Couldn't save settings to './settings.json': {}\n",
+            "Couldn't stringify settings for saving: {}\n",
             .{err},
             .red,
         );
-        return;
+        return; // The deferred memory cleanup will still execute.
     };
-
+    // Defer freeing the settings string immediately after it's used.
     defer self.alloc.free(settings_string);
 
     const settings_file = std.fs.cwd().createFile("./settings.json", .{}) catch |err| {
         commons.print(
-            "Couldn't save settings to './settings.json': {}\n",
+            "Couldn't create settings file './settings.json': {}\n",
             .{err},
             .red,
         );
-        return;
+        return; // The deferred memory cleanup will still execute.
     };
 
     var settings_buf: [1024]u8 = undefined;
@@ -115,20 +125,20 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     const interface = &file_writer.interface;
     interface.writeAll(settings_string) catch |err| {
         commons.print(
-            "Couldn't save settings to './settings.json': {}\n",
+            "Couldn't write to settings file './settings.json': {}\n",
             .{err},
             .red,
         );
-        return;
+        return; // The deferred memory cleanup will still execute.
     };
 
     interface.flush() catch |err| {
         commons.print(
-            "Couldn't save settings to './settings.json': {}\n",
+            "Couldn't flush settings file './settings.json': {}\n",
             .{err},
             .red,
         );
-        return;
+        return; // The deferred memory cleanup will still execute.
     };
 }
 

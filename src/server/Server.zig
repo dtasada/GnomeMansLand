@@ -198,17 +198,21 @@ fn handleMessage(self: *Self, client: *Client, message: []u8) !void {
 
 /// `game_data` and `socket_packets.world_data_chunks` are populated asynchronously
 pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
-    var self: *Self = try alloc.create(Self);
+    std.debug.print("1111\n", .{});
+    var self = try alloc.create(Self);
+    std.debug.print("2\n", .{});
     errdefer alloc.destroy(self);
 
     self._gpa = .init;
     self.alloc = self._gpa.allocator();
     self.settings = settings;
-    self.clients = try std.ArrayList(*Client).initCapacity(self.alloc, self.settings.max_players);
+    self.clients = try .initCapacity(self.alloc, self.settings.max_players);
     errdefer self.clients.deinit(self.alloc);
+    std.debug.print("3\n", .{});
 
     self.game_data = try GameData.init(self.alloc, self.settings);
     errdefer self.game_data.deinit(self.alloc);
+    std.debug.print("4\n", .{});
 
     self.socket_packets = .{
         .world_data_chunks = try self.alloc.alloc(
@@ -216,8 +220,10 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
             @divFloor(
                 self.game_data.world_data.height_map.len,
                 socket_packet.WorldDataChunk.FLOATS_PER_CHUNK,
-            ) + @intFromBool(self.game_data.world_data.height_map.len %
-                socket_packet.WorldDataChunk.FLOATS_PER_CHUNK != 0),
+            ) + @intFromBool(
+                self.game_data.world_data.height_map.len %
+                    socket_packet.WorldDataChunk.FLOATS_PER_CHUNK != 0,
+            ),
         ),
     };
     errdefer alloc.free(self.socket_packets.world_data_chunks);

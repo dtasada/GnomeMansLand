@@ -38,10 +38,7 @@ pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
             .top_left_x = self.text_box_set.getHitbox().x,
             .top_left_y = self.text_box_set.getHitbox().y + self.text_box_set.getHitbox().height + 16.0,
         },
-        &.{
-            "Create server",
-            "Back",
-        },
+        &.{ "Create server", "Back" },
     );
 
     return self;
