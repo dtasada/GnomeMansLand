@@ -209,13 +209,6 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     self.tsa = .{ .child_allocator = self.gpa.allocator() };
     self.alloc = self.tsa.allocator();
 
-    // test test
-    std.debug.print("before\n", .{});
-    const sixseven = try self.alloc.create(i32);
-    defer self.alloc.destroy(sixseven);
-    sixseven.* = 67;
-    std.debug.print("sixseven: {}\n", .{sixseven.*});
-
     self.settings = settings;
 
     self.clients = try .initCapacity(self.alloc, self.settings.max_players);

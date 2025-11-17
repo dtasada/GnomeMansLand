@@ -13,8 +13,7 @@ To address these issues, a phased refactoring approach is recommended.
 
 The most critical step is to separate the client and server into distinct executables.
 
-*   **Modify `build.zig`:** Update the build script to produce two separate executables: `client` and `server`.
-*   **Remove Server Instance from Client:** Remove the `server: ?*Server` field from the `Game` struct in `src/client/game/Game.zig`.
+*   **Modify `build.zig`:** Update the build script to produce two separate executables: `client` and `server`. **Remove Server Instance from Client:** Remove the `server: ?*Server` field from the `Game` struct in `src/client/game/Game.zig`.
 *   **Create a Clear Network Interface:** The client should only know how to connect to an IP and port and send/receive packets defined in `socket_packet.zig`. All direct calls to server code should be replaced with network communication.
 
 ### 2. Refactor `socket_packet.zig`
