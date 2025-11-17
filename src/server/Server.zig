@@ -14,7 +14,7 @@ const Self = @This();
 
 var polling_rate: u64 = undefined;
 
-_gpa: std.heap.GeneralPurposeAllocator(.{}),
+gpa: std.heap.DebugAllocator(.{}),
 alloc: std.mem.Allocator,
 sock: network.Socket,
 clients: std.ArrayList(*Client),
@@ -75,8 +75,8 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
             error.WouldBlock => continue,
             error.ConnectionResetByPeer => {
                 commons.print(
-                    "Socket disconnected\n",
-                    .{},
+                    "Socket disconnected: {}\n",
+                    .{err},
                     .blue,
                 );
                 return;
@@ -198,21 +198,29 @@ fn handleMessage(self: *Self, client: *Client, message: []u8) !void {
 
 /// `game_data` and `socket_packets.world_data_chunks` are populated asynchronously
 pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
-    std.debug.print("1111\n", .{});
     var self = try alloc.create(Self);
-    std.debug.print("2\n", .{});
     errdefer alloc.destroy(self);
 
-    self._gpa = .init;
-    self.alloc = self._gpa.allocator();
+    self.gpa = .init;
+    errdefer _ = self.gpa.deinit();
+
+    var tsa: std.heap.ThreadSafeAllocator = .{ .child_allocator = self.gpa.allocator() };
+    self.alloc = tsa.allocator();
+
+    // test test
+    std.debug.print("before\n", .{});
+    const sixseven = try self.alloc.create(i32);
+    defer self.alloc.destroy(sixseven);
+    sixseven.* = 67;
+    std.debug.print("sixseven: {}\n", .{sixseven.*});
+
     self.settings = settings;
+
     self.clients = try .initCapacity(self.alloc, self.settings.max_players);
     errdefer self.clients.deinit(self.alloc);
-    std.debug.print("3\n", .{});
 
     self.game_data = try GameData.init(self.alloc, self.settings);
     errdefer self.game_data.deinit(self.alloc);
-    std.debug.print("4\n", .{});
 
     self.socket_packets = .{
         .world_data_chunks = try self.alloc.alloc(
@@ -226,7 +234,7 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
             ),
         ),
     };
-    errdefer alloc.free(self.socket_packets.world_data_chunks);
+    errdefer self.alloc.free(self.socket_packets.world_data_chunks);
     @memset(self.socket_packets.world_data_chunks, null);
 
     polling_rate = self.settings.polling_rate;
@@ -275,7 +283,7 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
 
     network.deinit();
 
-    _ = self._gpa.deinit();
+    _ = self.gpa.deinit();
 
     alloc.destroy(self);
 }

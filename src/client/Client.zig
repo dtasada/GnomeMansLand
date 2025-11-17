@@ -12,7 +12,7 @@ pub const Settings = @import("Settings.zig");
 
 const Self = @This();
 
-_gpa: std.heap.GeneralPurposeAllocator(.{}),
+gpa: std.heap.DebugAllocator(.{}),
 alloc: std.mem.Allocator,
 sock: network.Socket,
 listen_thread: std.Thread,
@@ -24,9 +24,9 @@ pub fn init(alloc: std.mem.Allocator, settings: Settings, connect_message: socke
     var self: *Self = try alloc.create(Self);
     errdefer alloc.destroy(self);
 
-    self._gpa = .init;
-    self.alloc = self._gpa.allocator();
-    errdefer _ = self._gpa.deinit();
+    self.gpa = .init;
+    self.alloc = self.gpa.allocator();
+    errdefer _ = self.gpa.deinit();
 
     self.game_data = try GameData.init(self.alloc);
     errdefer self.game_data.deinit(self.alloc);
@@ -72,7 +72,7 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
 
     network.deinit();
 
-    _ = self._gpa.deinit();
+    _ = self.gpa.deinit();
     alloc.destroy(self);
 }
 

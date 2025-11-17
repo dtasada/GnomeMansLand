@@ -8,7 +8,7 @@ const Game = @import("game");
 
 pub fn main() !void {
     // Create allocator for game object
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
 
     const alloc = gpa.allocator();

@@ -94,6 +94,13 @@ pub fn hostServer(game: *Game) !void {
     if (game.server) |server| server.deinit(game.alloc);
 
     game.server = try Server.init(game.alloc, game.settings.server);
+    //
+    // test test
+    std.debug.print("before 69\n", .{});
+    const sixnine = try game.server.?.alloc.create(i32);
+    defer game.server.?.alloc.destroy(sixnine);
+    sixnine.* = 69;
+    std.debug.print("sixnine: {}\n", .{sixnine.*});
 
     const t = try std.Thread.spawn(.{}, waitForServer, .{game});
     t.detach();

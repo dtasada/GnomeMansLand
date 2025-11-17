@@ -19,7 +19,7 @@ pub const rcamera = @import("rcamera.zig");
 
 const Self = @This();
 
-_gpa: std.heap.GeneralPurposeAllocator(.{}),
+gpa: std.heap.DebugAllocator(.{}),
 lights: std.ArrayList(Light) = .{},
 client: ?*Client = null,
 server: ?*Server = null,
@@ -35,8 +35,8 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
     var self: *Self = try alloc.create(Self);
     errdefer alloc.destroy(self);
 
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
-    const inner_alloc = gpa.allocator();
+    self.gpa = .init;
+    const inner_alloc = self.gpa.allocator();
     const settings_parsed = try parseSettings(inner_alloc);
     errdefer settings_parsed.deinit();
     const settings = settings_parsed.value;
@@ -47,7 +47,7 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
     ui.gwathlyn_font = try rl.loadFontEx("resources/fonts/gwathlyn.ttf", 128, null);
 
     self.* = .{
-        ._gpa = gpa,
+        .gpa = self.gpa,
         ._settings_parsed = settings_parsed,
         .alloc = inner_alloc,
         .settings = settings,
@@ -69,33 +69,23 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
-    // Defer closing the window to the very end of the application's lifecycle.
-    defer rl.closeWindow();
-
-    // Defer the final memory cleanup in LIFO order. This will be the last block to execute.
-    // 3. Destroy the Game object itself using the original allocator.
-    defer alloc.destroy(self);
-    // 2. Deinitialize the GeneralPurposeAllocator, which frees self.alloc.
-    defer _ = self._gpa.deinit();
-    // 1. Deinitialize the parsed settings structure.
-    defer self._settings_parsed.deinit();
-
-    // 1. Deinitialize all game states and their UI components.
     self.state.deinit(self.alloc);
 
-    // 2. Unload fonts now that no UI components are using them.
     ui.chalk_font.unload();
     ui.gwathlyn_font.unload();
 
-    // 3. Deinitialize client and server if they exist.
     if (self.client) |c| c.deinit(self.alloc);
     if (self.server) |s| s.deinit(self.alloc);
 
-    // 4. Deinitialize other game resources.
     self.lights.deinit(self.alloc);
     self.light_shader.unload();
 
-    // 5. Try to save settings to file. This uses self.alloc, which is still valid.
+    defer rl.closeWindow();
+
+    defer alloc.destroy(self);
+    defer _ = self.gpa.deinit();
+    defer self._settings_parsed.deinit();
+
     const settings_string: []u8 = std.json.Stringify.valueAlloc(
         self.alloc,
         self.settings,
@@ -106,9 +96,8 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
             .{err},
             .red,
         );
-        return; // The deferred memory cleanup will still execute.
+        return;
     };
-    // Defer freeing the settings string immediately after it's used.
     defer self.alloc.free(settings_string);
 
     const settings_file = std.fs.cwd().createFile("./settings.json", .{}) catch |err| {
@@ -117,7 +106,7 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
             .{err},
             .red,
         );
-        return; // The deferred memory cleanup will still execute.
+        return;
     };
 
     var settings_buf: [1024]u8 = undefined;
@@ -129,7 +118,7 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
             .{err},
             .red,
         );
-        return; // The deferred memory cleanup will still execute.
+        return;
     };
 
     interface.flush() catch |err| {
@@ -138,7 +127,7 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
             .{err},
             .red,
         );
-        return; // The deferred memory cleanup will still execute.
+        return;
     };
 }
 
