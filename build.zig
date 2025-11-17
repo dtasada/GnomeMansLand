@@ -88,31 +88,32 @@ pub fn build(b: *std.Build) void {
     network_mod.importTo(&.{ client_mod, server_mod });
     socket_packet_mod.addImport(server_mod);
 
-    const states_mod = modules.create("states", "src/client/states/states.zig");
+    const state_mod = modules.create("state", "src/client/state/State.zig");
 
-    const game_mod = modules.create("game", "src/client/game/Game.zig").addImports(&.{ raygui_mod, states_mod });
+    const game_mod = modules.create("game", "src/client/game/Game.zig").addImports(&.{ raygui_mod, state_mod });
 
     // add raylib, client and server to both game and states
-    raylib_mod.importTo(&.{ game_mod, states_mod });
-    client_mod.importTo(&.{ game_mod, states_mod });
-    server_mod.importTo(&.{ game_mod, states_mod });
+    raylib_mod.importTo(&.{ game_mod, state_mod });
+    client_mod.importTo(&.{ game_mod, state_mod });
+    server_mod.importTo(&.{ game_mod, state_mod });
 
     // add game to states and client
-    game_mod.importTo(&.{ states_mod, client_mod });
+    game_mod.importTo(&.{ state_mod, client_mod });
 
     // add commons to everything
     commons_mod.importTo(&.{
         socket_packet_mod,
         client_mod,
         server_mod,
-        states_mod,
+        state_mod,
         game_mod,
     });
 
     // add socket_packet to everything
     socket_packet_mod.importTo(&.{
         server_mod,
-        states_mod,
+        client_mod,
+        state_mod,
         game_mod,
     });
 

@@ -3,9 +3,9 @@ const std = @import("std");
 const rl = @import("raylib");
 
 const ui = @import("ui.zig");
-const states = @import("states.zig");
 
 const Game = @import("game");
+const State = @import("State.zig");
 
 const Self = @This();
 
@@ -30,7 +30,7 @@ pub fn update(self: *const Self, game: *Game) !void {
     rl.clearBackground(.black);
 
     try self.buttons.update(.{
-        .{ states.openLobby, .{game} },
+        .{ State.openLobby, .{game} },
     });
 
     rl.endDrawing();

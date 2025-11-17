@@ -3,9 +3,10 @@ const rl = @import("raylib");
 
 const ui = @import("ui.zig");
 const commons = @import("commons");
-const states = @import("states.zig");
 
 const Game = @import("game");
+const State = @import("State.zig");
+const Client = @import("client");
 
 const Self = @This();
 
@@ -14,14 +15,14 @@ button_set: ui.ButtonSet,
 port_string_buf: [6]u8,
 max_players_string_buf: [2]u8,
 
-pub fn init(alloc: std.mem.Allocator, game: *Game) !Self {
+pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
     var self: Self = undefined;
 
     @memset(&self.port_string_buf, 0);
     @memset(&self.max_players_string_buf, 0);
 
-    const server_port = try std.fmt.bufPrint(&self.port_string_buf, "{}", .{game.settings.server.port});
-    const max_players = try std.fmt.bufPrint(&self.max_players_string_buf, "{}", .{game.settings.server.max_players});
+    const server_port = try std.fmt.bufPrint(&self.port_string_buf, "{}", .{settings.server.port});
+    const max_players = try std.fmt.bufPrint(&self.max_players_string_buf, "{}", .{settings.server.max_players});
 
     self.text_box_set = try ui.TextBoxSet.initGeneric(
         alloc,
@@ -32,7 +33,7 @@ pub fn init(alloc: std.mem.Allocator, game: *Game) !Self {
         },
     );
     self.button_set = try ui.ButtonSet.initGeneric(
-        game.alloc,
+        alloc,
         .{ // clamp button set to be under text boxes
             .top_left_x = self.text_box_set.getHitbox().x,
             .top_left_y = self.text_box_set.getHitbox().y + self.text_box_set.getHitbox().height + 16.0,
@@ -104,8 +105,8 @@ pub fn update(self: *Self, game: *Game) !void {
         &self.max_players_string_buf,
     });
     try self.button_set.update(.{
-        .{ states.hostServer, .{game} },
-        .{ states.openLobby, .{game} },
+        .{ State.hostServer, .{game} },
+        .{ State.openLobby, .{game} },
     });
 
     // bro do not touch this code this is so fragile bro. null termination sucks

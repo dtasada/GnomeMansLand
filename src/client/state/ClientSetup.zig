@@ -3,9 +3,10 @@ const rl = @import("raylib");
 
 const ui = @import("ui.zig");
 const commons = @import("commons");
-const states = @import("states.zig");
 
 const Game = @import("game");
+const Client = @import("client");
+const State = @import("State.zig");
 
 const Self = @This();
 
@@ -15,7 +16,7 @@ button_set: ui.ButtonSet,
 server_port_string_buf: [6]u8,
 connect_error: ?ui.Text,
 
-pub fn init(alloc: std.mem.Allocator, game: *Game) !Self {
+pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
     var self: Self = undefined;
     self.connect_error = null;
 
@@ -23,12 +24,12 @@ pub fn init(alloc: std.mem.Allocator, game: *Game) !Self {
         alloc,
         .{ .top_left_x = 24, .top_left_y = 128 },
         &.{
-            .{ .label = "Server address: ", .max_len = 15, .default_value = @constCast(game.settings.multiplayer.server_host) },
-            .{ .label = "Server port: ", .max_len = 5, .default_value = try std.fmt.bufPrint(&self.server_port_string_buf, "{}", .{game.settings.multiplayer.server_port}) }, // buf.len - 1 bc discard sentinel
+            .{ .label = "Server address: ", .max_len = 15, .default_value = @constCast(settings.multiplayer.server_host) },
+            .{ .label = "Server port: ", .max_len = 5, .default_value = try std.fmt.bufPrint(&self.server_port_string_buf, "{}", .{settings.multiplayer.server_port}) }, // buf.len - 1 bc discard sentinel
         },
     );
     self.button_set = try ui.ButtonSet.initGeneric(
-        game.alloc,
+        alloc,
         .{
             .top_left_x = self.text_box_set.getHitbox().x,
             .top_left_y = self.text_box_set.getHitbox().y + self.text_box_set.getHitbox().height + 16.0,
@@ -57,8 +58,8 @@ pub fn update(self: *Self, game: *Game) !void {
     });
 
     self.button_set.update(.{
-        .{ states.openGame, .{game} },
-        .{ states.openLobby, .{game} },
+        .{ State.openGame, .{game} },
+        .{ State.openLobby, .{game} },
     }) catch |err| switch (err) {
         error.CouldNotConnect => {
             self.connect_error = try ui.Text.init(.{

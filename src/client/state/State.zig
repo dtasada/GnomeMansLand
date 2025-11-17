@@ -5,6 +5,7 @@ const Server = @import("server");
 const std = @import("std");
 
 const socket_packet = @import("socket_packet");
+const commons = @import("commons");
 
 pub const Lobby = @import("Lobby.zig");
 pub const LobbySettings = @import("LobbySettings.zig");
@@ -13,35 +14,79 @@ pub const ServerSetup = @import("ServerSetup.zig");
 pub const InGame = @import("InGame.zig");
 pub const ui = @import("ui.zig");
 
-pub fn openSettings(game: *Game) void {
-    game.state = .lobby_settings;
+const Self = @This();
+
+state: enum {
+    lobby,
+    game,
+    lobby_settings,
+    client_setup,
+    server_setup,
+},
+
+lobby: Lobby,
+lobby_settings: LobbySettings,
+client_setup: ClientSetup,
+server_setup: ServerSetup,
+in_game: InGame,
+
+pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
+    return .{
+        .state = .lobby,
+        .lobby = try Lobby.init(alloc),
+        .lobby_settings = try LobbySettings.init(alloc),
+        .server_setup = try ServerSetup.init(alloc, settings),
+        .client_setup = try ClientSetup.init(alloc, settings),
+        .in_game = InGame.init(),
+    };
+}
+
+pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+    self.client_setup.deinit(alloc);
+    self.server_setup.deinit(alloc);
+    self.lobby.deinit(alloc);
+    self.lobby_settings.deinit(alloc);
+}
+
+pub fn update(self: *Self, game: *Game) !void {
+    switch (self.state) {
+        .lobby => try self.lobby.update(game.alloc, self),
+        .lobby_settings => try self.lobby_settings.update(game),
+        .client_setup => try self.client_setup.update(game),
+        .server_setup => try self.server_setup.update(game),
+        .game => try self.in_game.update(game),
+    }
+}
+
+pub fn openSettings(self: *Self) void {
+    self.state = .lobby_settings;
 }
 
 pub fn openLobby(game: *Game) void {
-    game.lobby.reinit(game.alloc) catch {};
-    game.state = .lobby;
+    game.state.lobby.reinit(game.alloc) catch {};
+    game.state.state = .lobby;
 }
 
-pub fn clientSetup(game: *Game) void {
-    game.state = .client_setup;
+pub fn clientSetup(self: *Self) void {
+    self.state = .client_setup;
 }
 
-pub fn serverSetup(game: *Game) void {
-    game.state = .server_setup;
+pub fn serverSetup(self: *Self) void {
+    self.state = .server_setup;
 }
 
 /// Creates client and opens game
 pub fn openGame(game: *Game) !void {
-    if (game.lobby.nickname_input.len != 0) { // only if nickname isn't empty
+    if (game.state.lobby.nickname_input.len != 0) { // only if nickname isn't empty
         if (game.client) |client| client.deinit(game.alloc);
 
         game.client = try Client.init(
             game.alloc,
             game.settings,
-            socket_packet.ClientConnect.init(game.lobby.nickname_input.inner_text.body),
+            socket_packet.ClientConnect.init(game.state.lobby.nickname_input.inner_text.body),
         );
 
-        game.state = .game;
+        game.state.state = .game;
     }
 }
 

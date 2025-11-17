@@ -4,12 +4,12 @@ const rl = @import("raylib");
 
 const ui = @import("ui.zig");
 const socket_packet = @import("socket_packet");
-const states = @import("states.zig");
 const commons = @import("commons");
 
 const Server = @import("server");
 const Client = @import("client");
 const Game = @import("game");
+const State = @import("State.zig");
 
 const Self = @This();
 
@@ -64,16 +64,16 @@ pub fn reinit(self: *Self, alloc: std.mem.Allocator) !void {
     self.* = try init(alloc);
 }
 
-pub fn update(self: *Self, game: *Game) !void {
+pub fn update(self: *Self, alloc: std.mem.Allocator, state: *State) !void {
     if (rl.isWindowResized())
-        try self.reinit(game.alloc);
+        try self.reinit(alloc);
 
     rl.clearBackground(.black);
 
     try self.buttons.update(.{
-        .{ states.serverSetup, .{game} },
-        .{ states.clientSetup, .{game} },
-        .{ states.openSettings, .{game} },
+        .{ State.serverSetup, .{state} },
+        .{ State.clientSetup, .{state} },
+        .{ State.openSettings, .{state} },
     });
 
     self.title_text.update();

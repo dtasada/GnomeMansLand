@@ -9,10 +9,21 @@ const rcamera = Game.rcamera;
 
 const Game = @import("game");
 
+const Self = @This();
+
+camera: ?rl.Camera3D = null,
+camera_mode: enum { first_person, isometric } = .isometric,
+camera_sens: f32 = 0.1,
+mouse_is_enabled: bool = true,
+
+pub fn init() Self {
+    return .{};
+}
+
 /// input handling
-fn handleKeys(game: *Game) !void {
+fn handleKeys(self: *Self, game: *Game) !void {
     // pan the camera with middle mouse
-    if (game.camera) |*camera| {
+    if (self.camera) |*camera| {
         if (rl.isMouseButtonDown(.middle)) {
             const camDir = camera.target.subtract(camera.position).normalize();
             const worldUp = rcamera.getUp(camera);
@@ -42,12 +53,12 @@ fn handleKeys(game: *Game) !void {
         if (rl.isMouseButtonDown(.right)) {
             centerMouse();
             rcamera.update(camera, .third_person);
-        } else if (!game.mouse_is_enabled)
-            toggleMouse(&game.mouse_is_enabled);
+        } else if (!self.mouse_is_enabled)
+            toggleMouse(&self.mouse_is_enabled);
 
         if (rl.isMouseButtonPressed(.left)) {
             if (game.client) |client| {
-                if (getMouseToWorld(game)) |pos| {
+                if (self.getMouseToWorld(game)) |pos| {
                     const move_player = socket_packet.MovePlayer.init(.init(pos.x, pos.z));
                     const move_player_string = try std.json.Stringify.valueAlloc(game.alloc, move_player, .{});
                     defer game.alloc.free(move_player_string);
@@ -98,8 +109,8 @@ fn toggleMouse(is_enabled: *bool) void {
 }
 
 /// gets equivalent in-world position from 2d cursor position
-fn getMouseToWorld(game: *Game) ?rl.Vector3 {
-    if (game.camera) |camera| {
+fn getMouseToWorld(self: *const Self, game: *Game) ?rl.Vector3 {
+    if (self.camera) |camera| {
         if (game.client) |client| {
             if (client.game_data.world_data) |world_data| {
                 for (world_data.models) |model| {
@@ -122,7 +133,7 @@ fn getMouseToWorld(game: *Game) ?rl.Vector3 {
 }
 
 /// resets camera back to the middle of the world
-fn resetCamera(game: *Game) void {
+fn resetCamera(self: *Self, game: *Game) void {
     if (game.client) |client| {
         if (client.game_data.world_data) |world_data| {
             // Use more reasonable camera positioning to avoid precision issues
@@ -132,7 +143,7 @@ fn resetCamera(game: *Game) void {
 
             rcamera.MAX_FOV = camera_height * 2.0;
 
-            game.camera = .{
+            self.camera = .{
                 .fovy = rcamera.MAX_FOV,
                 .position = rl.Vector3.init(center_x, camera_height, center_z + camera_height * 0.5),
                 .projection = .orthographic,
@@ -143,8 +154,8 @@ fn resetCamera(game: *Game) void {
     }
 }
 
-fn drawUi(game: *Game) void {
-    if (game.camera) |camera| {
+fn drawUi(self: *const Self, game: *Game) void {
+    if (self.camera) |camera| {
         rl.drawText(rl.textFormat("Camera x: %.1f, y: %.1f, z: %.1f", .{
             camera.position.x,
             camera.position.y,
@@ -179,7 +190,7 @@ fn drawUi(game: *Game) void {
     }
 }
 
-pub fn update(game: *Game) !void {
+pub fn update(self: *Self, game: *Game) !void {
     // loading screen
     if (game.client) |client| {
         if (client.game_data.world_data) |*world_data| {
@@ -217,16 +228,16 @@ pub fn update(game: *Game) !void {
     }
 
     // update step
-    try handleKeys(game);
+    try self.handleKeys(game);
 
-    if (game.camera) |*camera|
+    if (self.camera) |*camera|
         Game.Light.updateLights(camera, game.light_shader, game.lights);
 
     // render step
     rl.beginDrawing();
     rl.clearBackground(.sky_blue);
 
-    if (game.camera) |c| c.begin();
+    if (self.camera) |c| c.begin();
 
     // draw lights and models
     game.light_shader.activate();
@@ -237,8 +248,8 @@ pub fn update(game: *Game) !void {
 
     if (game.client) |client| {
         if (client.game_data.world_data) |*world_data| {
-            if (game.camera == null)
-                resetCamera(game);
+            if (self.camera == null)
+                self.resetCamera(game);
 
             // Draw players
             for (client.game_data.players.items) |player| {
@@ -264,9 +275,9 @@ pub fn update(game: *Game) !void {
 
     game.light_shader.deactivate();
 
-    if (game.camera) |c| c.end();
+    if (self.camera) |c| c.end();
 
-    drawUi(game);
+    self.drawUi(game);
 
     rl.endDrawing();
 }
