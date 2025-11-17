@@ -1,4 +1,4 @@
-const Game = @import("../Game.zig");
+const _Game = @import("../Game.zig");
 const Client = @import("../Client.zig");
 const Server = @import("../../server/Server.zig");
 
@@ -10,26 +10,27 @@ pub const Lobby = @import("Lobby.zig");
 pub const LobbySettings = @import("LobbySettings.zig");
 pub const ClientSetup = @import("ClientSetup.zig");
 pub const ServerSetup = @import("ServerSetup.zig");
+pub const InGame = @import("InGame.zig");
 
-pub fn openSettings(game: *Game) void {
+pub fn openSettings(game: *_Game) void {
     game.state = .lobby_settings;
 }
 
-pub fn openLobby(game: *Game) void {
+pub fn openLobby(game: *_Game) void {
     game.lobby.reinit(game.alloc) catch {};
     game.state = .lobby;
 }
 
-pub fn clientSetup(game: *Game) void {
+pub fn clientSetup(game: *_Game) void {
     game.state = .client_setup;
 }
 
-pub fn serverSetup(game: *Game) void {
+pub fn serverSetup(game: *_Game) void {
     game.state = .server_setup;
 }
 
 /// Creates client and opens game
-pub fn openGame(game: *Game) !void {
+pub fn openGame(game: *_Game) !void {
     if (game.lobby.nickname_input.len != 0) { // only if nickname isn't empty
         if (game.client) |client| client.deinit(game.alloc);
 
@@ -43,7 +44,7 @@ pub fn openGame(game: *Game) !void {
     }
 }
 
-pub fn hostServer(game: *Game) !void {
+pub fn hostServer(game: *_Game) !void {
     if (game.server) |server| server.deinit(game.alloc);
 
     game.server = try Server.init(game.alloc, game.settings.server);
@@ -52,7 +53,7 @@ pub fn hostServer(game: *Game) !void {
     t.detach();
 }
 
-fn waitForServer(game: *Game) !void {
+fn waitForServer(game: *_Game) !void {
     var chunk_thread: ?std.Thread = null;
     if (game.server) |server| {
         while (true) {

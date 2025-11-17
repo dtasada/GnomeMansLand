@@ -18,7 +18,7 @@ height_map: []f32, // 2d in practice
 _height_map_filled: usize = 0,
 size: commons.v2u,
 models: []?rl.Model,
-models_generated: std.atomic.Value(usize) = .init(0),
+models_generated: usize = 0,
 gen_models_thread: ?std.Thread = null,
 
 const Rgb = struct {
@@ -105,7 +105,7 @@ pub fn allFloatsDownloaded(self: *const Self) bool {
 }
 
 pub fn allModelsGenerated(self: *const Self) bool {
-    return self.models_generated.load(.monotonic) == self.models.len;
+    return self.models_generated == self.models.len;
 }
 
 pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
@@ -122,140 +122,101 @@ pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
 
 pub fn genModels(
     self: *Self,
-    alloc: std.mem.Allocator,
     settings: Settings,
     light_shader: rl.Shader,
 ) !void {
-    if (self.gen_models_thread == null)
-        self.gen_models_thread = try std.Thread.spawn(
-            .{},
-            spawnGenModelThreads,
-            .{ self, alloc, settings, light_shader },
-        );
-}
+    for (0..self.models.len) |model_index| {
+        const chunks_x = (self.size.x + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
+        const chunk_x = model_index % chunks_x;
+        const chunk_y = model_index / chunks_x;
 
-fn spawnGenModelThreads(
-    self: *Self,
-    alloc: std.mem.Allocator,
-    settings: Settings,
-    light_shader: rl.Shader,
-) !void {
-    var pool: std.Thread.Pool = undefined;
-    var wg: std.Thread.WaitGroup = .{};
-    try pool.init(.{ .allocator = alloc });
-    defer pool.deinit();
+        const min_x = chunk_x * MODEL_RESOLUTION;
+        const min_y = chunk_y * MODEL_RESOLUTION;
+        const max_x = @min(min_x + MODEL_RESOLUTION, self.size.x);
+        const max_y = @min(min_y + MODEL_RESOLUTION, self.size.y);
 
-    for (0..self.models.len) |_|
-        pool.spawnWg(&wg, genModel, .{ self, settings, light_shader });
-
-    wg.wait();
-}
-
-fn genModel(self: *Self, settings: Settings, light_shader: rl.Shader) void {
-    std.debug.print("hello 1\n", .{});
-    const model_index = blk: {
-        var idx: ?usize = null;
-        for (self.models, 0..) |model, i|
-            if (model == null) {
-                idx = i;
-                break;
-            };
-
-        break :blk idx orelse return;
-    };
-
-    const chunks_x = (self.size.x + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
-    const chunk_x = model_index % chunks_x;
-    const chunk_y = model_index / chunks_x;
-
-    const min_x = chunk_x * MODEL_RESOLUTION;
-    const min_y = chunk_y * MODEL_RESOLUTION;
-    const max_x = @min(min_x + MODEL_RESOLUTION, self.size.x);
-    const max_y = @min(min_y + MODEL_RESOLUTION, self.size.y);
-
-    // Add bounds checking
-    if (min_x >= self.size.x or min_y >= self.size.y) {
-        commons.print(
-            "Model generation bounds error: min_x={}, min_y={}, size={}x{}\n",
-            .{ min_x, min_y, self.size.x, self.size.y },
-            .red,
-        );
-        return;
-    }
-
-    var image = rl.Image.genColor(
-        @intCast(MODEL_RESOLUTION),
-        @intCast(MODEL_RESOLUTION),
-        .blue,
-    );
-    defer image.unload(); // Make sure to unload the image
-
-    for (min_y..max_y) |y| {
-        for (min_x..max_x) |x| {
-            if (x >= self.size.x or y >= self.size.y) continue;
-
-            const height = (self.getHeight(x, y) + settings.server.world_generation.amplitude) / (2 * settings.server.world_generation.amplitude);
-            const tile: Rgb =
-                if (height <= TileData.water)
-                    Color.WATER_LOW.lerp(Color.WATER_HIGH, height / TileData.water)
-                else if (height <= TileData.sand)
-                    Color.SAND_LOW.lerp(Color.SAND_HIGH, (height - TileData.water) / (TileData.sand - TileData.water))
-                else if (height <= TileData.grass)
-                    Color.GRASS_LOW.lerp(Color.GRASS_HIGH, (height - TileData.sand) / (TileData.grass - TileData.sand))
-                else if (height <= TileData.mountain)
-                    Color.MOUNTAIN_LOW.lerp(Color.MOUNTAIN_HIGH, (height - TileData.grass) / (TileData.mountain - TileData.grass))
-                else
-                    Rgb.init(240, 240, 240);
-
-            image.drawPixel(
-                @intCast(x - min_x),
-                @intCast(y - min_y),
-                .{
-                    .r = @intCast(@max(0, @min(255, tile.r))), // Clamp values
-                    .g = @intCast(@max(0, @min(255, tile.g))),
-                    .b = @intCast(@max(0, @min(255, tile.b))),
-                    .a = 255,
-                },
+        // Add bounds checking
+        if (min_x >= self.size.x or min_y >= self.size.y) {
+            commons.print(
+                "Model generation bounds error: min_x={}, min_y={}, size={}x{}\n",
+                .{ min_x, min_y, self.size.x, self.size.y },
+                .red,
             );
+            return;
         }
+
+        var image = rl.Image.genColor(
+            @intCast(MODEL_RESOLUTION),
+            @intCast(MODEL_RESOLUTION),
+            .blue,
+        );
+        defer image.unload(); // Make sure to unload the image
+
+        for (min_y..max_y) |y| {
+            for (min_x..max_x) |x| {
+                if (x >= self.size.x or y >= self.size.y) continue;
+
+                const height = (self.getHeight(x, y) + settings.server.world_generation.amplitude) / (2 * settings.server.world_generation.amplitude);
+                const tile: Rgb =
+                    if (height <= TileData.water)
+                        Color.WATER_LOW.lerp(Color.WATER_HIGH, height / TileData.water)
+                    else if (height <= TileData.sand)
+                        Color.SAND_LOW.lerp(Color.SAND_HIGH, (height - TileData.water) / (TileData.sand - TileData.water))
+                    else if (height <= TileData.grass)
+                        Color.GRASS_LOW.lerp(Color.GRASS_HIGH, (height - TileData.sand) / (TileData.grass - TileData.sand))
+                    else if (height <= TileData.mountain)
+                        Color.MOUNTAIN_LOW.lerp(Color.MOUNTAIN_HIGH, (height - TileData.grass) / (TileData.mountain - TileData.grass))
+                    else
+                        Rgb.init(240, 240, 240);
+
+                image.drawPixel(
+                    @intCast(x - min_x),
+                    @intCast(y - min_y),
+                    .{
+                        .r = @intCast(@max(0, @min(255, tile.r))), // Clamp values
+                        .g = @intCast(@max(0, @min(255, tile.g))),
+                        .b = @intCast(@max(0, @min(255, tile.b))),
+                        .a = 255,
+                    },
+                );
+            }
+        }
+
+        const tex = rl.Texture.fromImage(image) catch |err| {
+            commons.print(
+                "Failed to create texture: {}\n",
+                .{err},
+                .red,
+            );
+            return;
+        };
+
+        errdefer tex.unload();
+
+        const mesh = self.genTerrainMesh(min_x, max_x, min_y, max_y) catch |err| {
+            commons.print(
+                "Failed to generate terrain mesh for chunk {}: {}\n",
+                .{ model_index, err },
+                .red,
+            );
+            return;
+        };
+
+        const model = &self.models[model_index];
+        model.* = rl.Model.fromMesh(mesh) catch |err| {
+            commons.print(
+                "Failed to create model from mesh for chunk {}: {}\n",
+                .{ model_index, err },
+                .red,
+            );
+            mesh.unload();
+            return;
+        };
+
+        model.*.?.materials[0].maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = tex;
+        model.*.?.materials[0].shader = light_shader;
+        self.models_generated += 1;
     }
-
-    const tex = rl.Texture.fromImage(image) catch |err| {
-        commons.print(
-            "Failed to create texture: {}\n",
-            .{err},
-            .red,
-        );
-        return;
-    };
-
-    errdefer tex.unload();
-
-    const mesh = self.genTerrainMesh(min_x, max_x, min_y, max_y) catch |err| {
-        commons.print(
-            "Failed to generate terrain mesh for chunk {}: {}\n",
-            .{ model_index, err },
-            .red,
-        );
-        return;
-    };
-
-    const model = &self.models[model_index];
-    model.* = rl.Model.fromMesh(mesh) catch |err| {
-        commons.print(
-            "Failed to create model from mesh for chunk {}: {}\n",
-            .{ model_index, err },
-            .red,
-        );
-        mesh.unload();
-        return;
-    };
-
-    model.*.?.materials[0].maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = tex;
-    model.*.?.materials[0].shader = light_shader;
-
-    _ = self.models_generated.fetchAdd(1, .monotonic);
-    std.debug.print("hello 2\n", .{});
 }
 
 fn genTerrainMesh(
