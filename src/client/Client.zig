@@ -137,37 +137,44 @@ fn handleMessage(self: *Self, message: []const u8) !void {
     switch (message_root) {
         .object => |object| {
             var it = object.iterator();
-            while (it.next()) |entry| {
-                const key = entry.key_ptr.*;
-
-                if (std.mem.eql(u8, key, "descriptor")) {
-                    const descriptor = entry.value_ptr.*.string;
-
-                    if (std.mem.eql(u8, descriptor, "player_state")) {
-                        const request_parsed = try std.json.parseFromValue(socket_packet.Player, self.alloc, message_root, .{});
-                        defer request_parsed.deinit();
-
-                        const player = request_parsed.value.player;
-                        if (self.game_data.players.items.len <= @as(usize, player.id)) {
-                            try self.game_data.players.append(self.alloc, player);
-                        } else {
-                            self.game_data.players.items[@intCast(player.id)] = player;
-                        }
-                    }
-                    if (std.mem.startsWith(u8, descriptor, "world_data_chunk-")) {
-                        const request_parsed = try std.json.parseFromValue(socket_packet.WorldDataChunk, self.alloc, message_root, .{});
-                        defer request_parsed.deinit();
-
-                        const world_data_chunk: socket_packet.WorldDataChunk = request_parsed.value;
-                        if (self.game_data.world_data) |*world_data|
-                            world_data.addChunk(world_data_chunk)
-                        else
-                            self.game_data.world_data = try GameData.WorldData.init(self.alloc, world_data_chunk);
-                    }
-                }
-            }
+            while (it.next()) |entry|
+                try self.processMessage(message_root, entry);
         },
         else => {},
+    }
+}
+
+fn processMessage(
+    self: *Self,
+    message_root: std.json.Value,
+    entry: std.StringArrayHashMap(std.json.Value).Entry,
+) !void {
+    const key = entry.key_ptr.*;
+
+    if (std.mem.eql(u8, key, "descriptor")) {
+        const descriptor = entry.value_ptr.*.string;
+
+        if (std.mem.eql(u8, descriptor, "player_state")) {
+            const request_parsed = try std.json.parseFromValue(socket_packet.Player, self.alloc, message_root, .{});
+            defer request_parsed.deinit();
+
+            const player = request_parsed.value.player;
+            if (self.game_data.players.items.len <= @as(usize, player.id)) {
+                try self.game_data.players.append(self.alloc, player);
+            } else {
+                self.game_data.players.items[@intCast(player.id)] = player;
+            }
+        }
+        if (std.mem.startsWith(u8, descriptor, "world_data_chunk-")) {
+            const request_parsed = try std.json.parseFromValue(socket_packet.WorldDataChunk, self.alloc, message_root, .{});
+            defer request_parsed.deinit();
+
+            const world_data_chunk = request_parsed.value;
+            if (self.game_data.world_data) |*world_data|
+                world_data.addChunk(world_data_chunk)
+            else
+                self.game_data.world_data = try GameData.WorldData.init(self.alloc, world_data_chunk);
+        }
     }
 }
 

@@ -26,19 +26,19 @@ const Rgb = struct {
     g: i16,
     b: i16,
 
-    pub fn init(r: i16, g: i16, b: i16) Rgb {
+    fn init(r: i16, g: i16, b: i16) Rgb {
         return .{ .r = r, .g = g, .b = b };
     }
 
-    pub fn add(lhs: Rgb, rhs: Rgb) Rgb {
+    fn add(lhs: Rgb, rhs: Rgb) Rgb {
         return Rgb.init(lhs.r + rhs.r, lhs.g + rhs.g, lhs.b + rhs.b);
     }
 
-    pub fn subtract(lhs: Rgb, rhs: Rgb) Rgb {
+    fn subtract(lhs: Rgb, rhs: Rgb) Rgb {
         return Rgb.init(lhs.r -| rhs.r, lhs.g -| rhs.g, lhs.b -| rhs.b);
     }
 
-    pub fn scale(lhs: Rgb, m: f32) Rgb {
+    fn scale(lhs: Rgb, m: f32) Rgb {
         const m_ = if (m >= 0) m else 0;
         return Rgb.init(
             @intFromFloat(@as(f32, @floatFromInt(lhs.r)) * m_),
@@ -47,7 +47,7 @@ const Rgb = struct {
         );
     }
 
-    pub fn lerp(lhs: Rgb, rhs: Rgb, m: f32) Rgb {
+    fn lerp(lhs: Rgb, rhs: Rgb, m: f32) Rgb {
         return lhs.add(rhs.subtract(lhs).scale(m));
     }
 };
@@ -63,7 +63,7 @@ const Color = struct {
     const MOUNTAIN_HIGH = Rgb.init(120, 120, 120);
 };
 
-pub const TileData = struct {
+const TileData = struct {
     pub var water: f32 = 0.40;
     pub var sand: f32 = 0.43;
     pub var grass: f32 = 0.61;

@@ -8,7 +8,8 @@ const socket_packet = @import("socket_packet");
 const commons = @import("commons");
 
 pub const GameData = @import("GameData.zig");
-pub const ServerSettings = commons.ServerSettings;
+
+const ServerSettings = commons.ServerSettings;
 
 const Self = @This();
 
@@ -103,7 +104,7 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
     commons.print("Client disconnected.\n", .{}, .blue);
 }
 
-fn handleClientSend(self: *const Self, client: *Client) !void {
+fn handleClientSend(self: *const Self, client: *const Client) !void {
     loop: while (self.running.load(.monotonic) and client.open.load(.monotonic)) : (std.Thread.sleep(polling_rate * std.time.ns_per_ms)) {
         // send necessary game info
         for (self.game_data.players.items) |p| {
@@ -127,7 +128,7 @@ fn handleClientSend(self: *const Self, client: *Client) !void {
 }
 
 /// Parses, handles and responds to message accordingly
-fn handleMessage(self: *Self, client: *Client, message: []u8) !void {
+fn handleMessage(self: *Self, client: *const Client, message: []u8) !void {
     if (!self.running.load(.monotonic) or !client.open.load(.monotonic)) return;
 
     const message_parsed: std.json.Parsed(std.json.Value) = try std.json.parseFromSlice(std.json.Value, self.alloc, message, .{});
