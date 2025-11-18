@@ -108,7 +108,7 @@ fn waitForServer(game: *Game) !void {
                 if (chunk_thread == null) {
                     chunk_thread = try socket_packet.WorldDataChunk.init(
                         server.alloc,
-                        &server.game_data.world_data,
+                        server.game_data.world_data,
                         server.socket_packets.world_data_chunks,
                     );
                 }

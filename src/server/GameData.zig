@@ -9,7 +9,7 @@ const ServerSettings = commons.ServerSettings;
 
 const Self = @This();
 
-world_data: WorldData,
+world_data: *WorldData,
 players: std.ArrayList(Player),
 server_settings: ServerSettings,
 
@@ -50,31 +50,32 @@ pub const Player = struct {
 pub const WorldData = struct {
     size: commons.v2u,
     height_map: []f32, // 2d in practice
-    finished_generating: std.atomic.Value(bool),
-    network_chunks_ready: std.atomic.Value(bool),
-    floats_written: std.atomic.Value(usize),
-    network_chunks_generated: std.atomic.Value(usize),
+    finished_generating: std.atomic.Value(bool) = .init(false),
+    network_chunks_ready: std.atomic.Value(bool) = .init(false),
+    floats_written: usize = 0,
+    network_chunks_generated: std.atomic.Value(usize) = .init(0),
+    terrain_gen_thread: ?std.Thread = null,
 
     /// starts genTerrainData thread
-    pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !WorldData {
+    pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*WorldData {
         const x, const y = settings.world_generation.resolution;
-        var self: WorldData = .{
+        const self = try alloc.create(WorldData);
+        errdefer alloc.destroy(self);
+        self.* = .{
             .size = .{ .x = x, .y = y },
             .height_map = try alloc.alloc(f32, x * y),
-            .finished_generating = std.atomic.Value(bool).init(false),
-            .network_chunks_ready = std.atomic.Value(bool).init(false),
-            .floats_written = std.atomic.Value(usize).init(0),
-            .network_chunks_generated = std.atomic.Value(usize).init(0),
         };
         errdefer alloc.free(self.height_map);
 
-        try self.genTerrainData(alloc, settings);
+        self.terrain_gen_thread = try std.Thread.spawn(.{}, genTerrainData, .{ self, alloc, settings });
 
         return self;
     }
 
     pub fn deinit(self: *const WorldData, alloc: std.mem.Allocator) void {
+        if (self.terrain_gen_thread) |t| t.join();
         alloc.free(self.height_map);
+        alloc.destroy(self);
     }
 
     /// Asynchronously populates `world_data.height_map`
@@ -93,13 +94,22 @@ pub const WorldData = struct {
         try pool.init(.{ .allocator = alloc });
         defer pool.deinit();
 
-        for (0..self.size.y) |y| {
-            try pool.spawn(genTerrainDataLoop, .{ self, &settings, &pn, y });
-        }
+        var wg: std.Thread.WaitGroup = .{};
+        var mutex: std.Thread.Mutex = .{};
+
+        for (0..self.size.y) |y|
+            pool.spawnWg(
+                &wg,
+                genTerrainDataLoop,
+                .{ self, &mutex, &settings, &pn, y },
+            );
+
+        wg.wait();
     }
 
     fn genTerrainDataLoop(
         self: *WorldData,
+        mutex: *std.Thread.Mutex,
         settings: *const ServerSettings,
         pn: *const Perlin,
         y: usize,
@@ -123,11 +133,13 @@ pub const WorldData = struct {
                 freq *= settings.world_generation.lacunarity;
             }
 
+            mutex.lock();
             self.height_map[y * self.size.x + x] = height;
-            _ = self.floats_written.fetchAdd(1, .monotonic);
+            self.floats_written += 1;
+            mutex.unlock();
         }
 
-        if (self.floats_written.load(.monotonic) == self.height_map.len)
+        if (self.floats_written == self.height_map.len)
             self.finished_generating.store(true, .monotonic);
     }
 };

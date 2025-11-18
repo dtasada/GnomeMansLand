@@ -51,7 +51,7 @@ pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
 
 pub fn update(self: *Self, game: *Game) !void {
     if (game.server) |server| {
-        const world_data = &server.game_data.world_data;
+        const world_data = server.game_data.world_data;
         if (!world_data.finished_generating.load(.monotonic) or
             !world_data.network_chunks_ready.load(.monotonic))
         {
@@ -64,7 +64,7 @@ pub fn update(self: *Self, game: *Game) !void {
                     &buf,
                     "Creating world ({}%)...",
                     .{@divFloor(
-                        world_data.floats_written.load(.monotonic),
+                        world_data.floats_written,
                         world_data.height_map.len,
                     )},
                 )

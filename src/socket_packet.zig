@@ -32,7 +32,7 @@ pub const WorldDataChunk = struct {
     pub fn init(
         alloc: std.mem.Allocator,
         server_world_data: *ServerGameData.WorldData,
-        world_data_chunks: []?WorldDataChunk,
+        world_data_chunks: []WorldDataChunk,
     ) !std.Thread {
         return try std.Thread.spawn(.{}, genChunks, .{
             alloc,
@@ -44,7 +44,7 @@ pub const WorldDataChunk = struct {
     /// blocking. populates `world_data_chunks` in parallel.
     fn genChunks(
         alloc: std.mem.Allocator,
-        world_data_chunks: []?WorldDataChunk,
+        world_data_chunks: []WorldDataChunk,
         server_world_data: *ServerGameData.WorldData,
     ) !void {
         var pool: std.Thread.Pool = undefined;
@@ -54,6 +54,7 @@ pub const WorldDataChunk = struct {
         var wg: std.Thread.WaitGroup = .{};
         for (0..world_data_chunks.len) |i| {
             pool.spawnWg(&wg, genChunk, .{
+                alloc,
                 world_data_chunks,
                 server_world_data,
                 i,
@@ -64,16 +65,16 @@ pub const WorldDataChunk = struct {
     }
 
     fn genChunk(
-        chunks: []?WorldDataChunk,
+        alloc: std.mem.Allocator,
+        chunks: []WorldDataChunk,
         server_world_data: *ServerGameData.WorldData,
         i: usize,
     ) void {
         const start_idx = i * FLOATS_PER_CHUNK;
         const end_idx = @min(start_idx + FLOATS_PER_CHUNK, server_world_data.height_map.len);
 
-        var descriptor_buf: [32]u8 = undefined;
         chunks[i] = .{
-            .descriptor = std.fmt.bufPrint(&descriptor_buf, "world_data_chunk-{}", .{i}) catch |err| {
+            .descriptor = std.fmt.allocPrint(alloc, "world_data_chunk-{}", .{i}) catch |err| {
                 commons.print(
                     "Couldn't create world_data_chunk-{{}} descriptor: {}\n",
                     .{err},
