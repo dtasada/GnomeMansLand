@@ -256,6 +256,7 @@ fn genTerrainMesh(
         return error.MeshTooLarge;
     }
 
+    // we use malloc because raylib requires using malloc to allocate and free its resources.
     mesh.vertices = @ptrCast(@alignCast(c.malloc(vertices_size)));
     mesh.normals = @ptrCast(@alignCast(c.malloc(normals_size)));
     mesh.texcoords = @ptrCast(@alignCast(c.malloc(texcoords_size)));

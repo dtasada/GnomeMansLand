@@ -16,6 +16,7 @@ pub const Settings = Client.Settings;
 pub const GameData = @import("GameData.zig");
 pub const Light = @import("Light.zig");
 pub const rcamera = @import("rcamera.zig");
+pub const input = @import("input.zig");
 
 const Self = @This();
 

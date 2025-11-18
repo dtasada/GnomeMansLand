@@ -33,7 +33,11 @@ const Modules = struct {
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 
-    pub fn init(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) Modules {
+    pub fn init(
+        b: *std.Build,
+        target: std.Build.ResolvedTarget,
+        optimize: std.builtin.OptimizeMode,
+    ) Modules {
         return .{
             .build = b,
             .target = target,
@@ -145,6 +149,6 @@ pub fn build(b: *std.Build) void {
     exe_check.root_module.addImport("game", game_mod.mod);
     exe_check.root_module.addImport("commons", commons_mod.mod);
 
-    const check = b.step("check", "Check if dmr compiles");
+    const check = b.step("check", "Check if gnome_mans_land compiles");
     check.dependOn(&exe_check.step);
 }

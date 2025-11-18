@@ -6,7 +6,6 @@ const ui = @import("ui.zig");
 const socket_packet = @import("socket_packet");
 const commons = @import("commons");
 
-const Server = @import("server");
 const Client = @import("client");
 const Game = @import("game");
 const State = @import("State.zig");

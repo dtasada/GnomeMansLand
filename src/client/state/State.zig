@@ -92,7 +92,7 @@ pub fn openGame(game: *Game) !void {
 }
 
 pub fn hostServer(game: *Game) !void {
-    if (game.server) |server| server.deinit(game.alloc);
+    if (game.server) |s| s.deinit(game.alloc);
 
     game.server = try Server.init(game.alloc, game.settings.server);
 
