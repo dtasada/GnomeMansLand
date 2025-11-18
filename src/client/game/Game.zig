@@ -20,14 +20,13 @@ pub const rcamera = @import("rcamera.zig");
 const Self = @This();
 
 gpa: std.heap.DebugAllocator(.{}),
-lights: std.ArrayList(Light) = .{},
+alloc: std.mem.Allocator,
+
 client: ?*Client = null,
 server: ?*Server = null,
 
 _settings_parsed: std.json.Parsed(Settings),
-alloc: std.mem.Allocator,
 settings: Settings,
-light_shader: rl.Shader,
 
 state: State,
 
@@ -51,19 +50,8 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
         ._settings_parsed = settings_parsed,
         .alloc = inner_alloc,
         .settings = settings,
-        .light_shader = try getLightShader(),
         .state = try .init(inner_alloc, settings),
     };
-
-    errdefer self.lights.deinit(self.alloc);
-    try self.lights.append(self.alloc, Light.init(
-        .point,
-        .init(200, 200, 0),
-        .zero(),
-        .white,
-        1,
-        self.light_shader,
-    ));
 
     return self;
 }
@@ -76,9 +64,6 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
 
     if (self.client) |c| c.deinit(self.alloc);
     if (self.server) |s| s.deinit(self.alloc);
-
-    self.lights.deinit(self.alloc);
-    self.light_shader.unload();
 
     defer rl.closeWindow();
 
@@ -158,17 +143,6 @@ fn setupRaylib(settings: Settings) void {
     const height = rl.getScreenHeight();
     rl.setWindowSize(width, height + 1);
     rl.setWindowSize(width, height);
-}
-
-/// sets game.light_shader and game.lights
-fn getLightShader() !rl.Shader {
-    const light_shader = try rl.loadShader("./resources/shaders/lighting.vert.glsl", "./resources/shaders/lighting.frag.glsl");
-    light_shader.locs[@intFromEnum(rl.ShaderLocationIndex.vector_view)] = rl.getShaderLocation(light_shader, "viewPos");
-    const ambient_loc = rl.getShaderLocation(light_shader, "ambient");
-    const ambient: [4]f32 = .{ 0.1, 0.1, 0.1, 1.0 };
-    rl.setShaderValue(light_shader, ambient_loc, &ambient, .vec4);
-
-    return light_shader;
 }
 
 /// parses settings from "./settings.json"

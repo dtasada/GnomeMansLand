@@ -56,18 +56,15 @@ const Modules = struct {
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-
     const optimize = b.standardOptimizeOption(.{});
-
-    const exe_mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
 
     const exe = b.addExecutable(.{
         .name = "gnome_mans_land",
-        .root_module = exe_mod,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     const modules = Modules.init(b, target, optimize);
@@ -134,4 +131,20 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    // check for lsp
+    const exe_check = b.addExecutable(.{
+        .name = "dmr",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    exe_check.root_module.addImport("game", game_mod.mod);
+    exe_check.root_module.addImport("commons", commons_mod.mod);
+
+    const check = b.step("check", "Check if dmr compiles");
+    check.dependOn(&exe_check.step);
 }

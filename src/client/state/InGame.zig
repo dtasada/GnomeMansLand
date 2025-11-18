@@ -16,8 +16,40 @@ camera_mode: enum { first_person, isometric } = .isometric,
 camera_sens: f32 = 0.1,
 mouse_is_enabled: bool = true,
 
-pub fn init() Self {
-    return .{};
+lights: std.ArrayList(Game.Light) = .{},
+light_shader: rl.Shader,
+
+pub fn init(alloc: std.mem.Allocator) !Self {
+    var self: Self = .{
+        .light_shader = try getLightShader(),
+    };
+
+    try self.lights.append(alloc, Game.Light.init(
+        .point,
+        .init(200, 200, 0),
+        .zero(),
+        .white,
+        1.0,
+        self.light_shader,
+    ));
+
+    return self;
+}
+
+pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+    self.lights.deinit(alloc);
+    self.light_shader.unload();
+}
+
+/// sets game.light_shader and game.lights
+fn getLightShader() !rl.Shader {
+    const light_shader = try rl.loadShader("./resources/shaders/lighting.vert.glsl", "./resources/shaders/lighting.frag.glsl");
+    light_shader.locs[@intFromEnum(rl.ShaderLocationIndex.vector_view)] = rl.getShaderLocation(light_shader, "viewPos");
+    const ambient_loc = rl.getShaderLocation(light_shader, "ambient");
+    const ambient: [4]f32 = .{ 0.1, 0.1, 0.1, 1.0 };
+    rl.setShaderValue(light_shader, ambient_loc, &ambient, .vec4);
+
+    return light_shader;
 }
 
 /// input handling
@@ -71,12 +103,12 @@ fn handleKeys(self: *Self, game: *Game) !void {
 
     // debug light intensity
     if (rl.isKeyPressed(.minus)) {
-        for (game.lights.items) |*l|
+        for (self.lights.items) |*l|
             l.intensity -= 0.1;
     }
 
     if (rl.isKeyPressed(.equal)) {
-        for (game.lights.items) |*l|
+        for (self.lights.items) |*l|
             l.intensity += 0.1;
     }
 }
@@ -204,7 +236,7 @@ pub fn update(self: *Self, game: *Game) !void {
                         @divFloor(100 * world_data._height_map_filled, world_data.height_map.len),
                     })
                 else if (!world_data.allModelsGenerated()) blk: {
-                    world_data.genModels(game.settings, game.light_shader) catch |err| {
+                    world_data.genModels(game.settings, self.light_shader) catch |err| {
                         commons.print("Failed to generate model: {}", .{err}, .red);
                     };
                     break :blk try std.fmt.bufPrint(&buf, "Generating world models ({}%)...", .{
@@ -231,7 +263,7 @@ pub fn update(self: *Self, game: *Game) !void {
     try self.handleKeys(game);
 
     if (self.camera) |*camera|
-        Game.Light.updateLights(camera, game.light_shader, game.lights);
+        Game.Light.updateLights(camera, self.light_shader, self.lights);
 
     // render step
     rl.beginDrawing();
@@ -240,9 +272,9 @@ pub fn update(self: *Self, game: *Game) !void {
     if (self.camera) |c| c.begin();
 
     // draw lights and models
-    game.light_shader.activate();
+    self.light_shader.activate();
 
-    for (game.lights.items) |l| rl.drawSphere(l.position, 10, l.color);
+    for (self.lights.items) |l| rl.drawSphere(l.position, 10, l.color);
 
     rl.gl.rlDisableBackfaceCulling();
 
@@ -273,7 +305,7 @@ pub fn update(self: *Self, game: *Game) !void {
 
     rl.gl.rlEnableBackfaceCulling();
 
-    game.light_shader.deactivate();
+    self.light_shader.deactivate();
 
     if (self.camera) |c| c.end();
 

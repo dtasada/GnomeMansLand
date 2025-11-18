@@ -37,7 +37,7 @@ pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
         .lobby_settings = try LobbySettings.init(alloc),
         .server_setup = try ServerSetup.init(alloc, settings),
         .client_setup = try ClientSetup.init(alloc, settings),
-        .in_game = InGame.init(),
+        .in_game = try InGame.init(alloc),
     };
 }
 
@@ -46,6 +46,7 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     self.server_setup.deinit(alloc);
     self.lobby.deinit(alloc);
     self.lobby_settings.deinit(alloc);
+    self.in_game.deinit(alloc);
 }
 
 pub fn update(self: *Self, game: *Game) !void {
