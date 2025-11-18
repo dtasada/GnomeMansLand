@@ -14,6 +14,8 @@ const Self = @This();
 // Reduced model resolution for larger maps
 const MODEL_RESOLUTION = 32; // Reduced from 64
 
+const MIN_WALL_HEIGHT: f32 = -200.0;
+
 height_map: []f32, // 2d in practice
 _height_map_filled: usize = 0,
 size: commons.v2u,
@@ -75,7 +77,7 @@ pub fn init(alloc: std.mem.Allocator, first_packet: socket_packet.WorldDataChunk
     const chunks_x = (first_packet.total_size.x + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
     const chunks_y = (first_packet.total_size.y + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
     const amount_of_terrain_models = chunks_x * chunks_y;
-    const amount_of_models = amount_of_terrain_models + 4;
+    const amount_of_models = amount_of_terrain_models + 5;
 
     // Add safety check for too many models
     if (amount_of_models > 2048) {
@@ -219,7 +221,7 @@ pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
             model.*.?.materials[0].maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = tex;
             model.*.?.materials[0].shader = light_shader;
             self.models_generated += 1;
-        } else {
+        } else if (model_index != self.models.len - 1) {
             // Wall generation
             const wall_index = model_index - amount_of_terrain_models;
 
@@ -235,7 +237,7 @@ pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
             const model = &self.models[model_index];
             model.* = rl.Model.fromMesh(mesh) catch |err| {
                 commons.print(
-                    "Failed to create model from mesh for wall {}: {}\n",
+                    "Failed to create model from mesh for world wall {}: {}\n",
                     .{ wall_index, err },
                     .red,
                 );
@@ -243,11 +245,11 @@ pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
                 return;
             };
 
-            var wall_image = rl.Image.genColor(1, 1, rl.Color.dark_gray);
+            var wall_image = rl.Image.genColor(1, 1, .init(196, 164, 132, 255));
             defer wall_image.unload();
             const wall_tex = rl.Texture.fromImage(wall_image) catch |err| {
                 commons.print(
-                    "Failed to create texture for wall {}: {}\n",
+                    "Failed to create texture for world wall {}: {}\n",
                     .{ wall_index, err },
                     .red,
                 );
@@ -256,6 +258,44 @@ pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
             errdefer wall_tex.unload();
 
             model.*.?.materials[0].maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = wall_tex;
+            model.*.?.materials[0].shader = light_shader;
+            self.models_generated += 1;
+        } else {
+            std.debug.print("genned floor\n", .{});
+            // floor generation
+            const mesh = rl.genMeshPlane(@floatFromInt(self.size.x), @floatFromInt(self.size.y), 1, 1);
+
+            const model = &self.models[model_index];
+            model.* = rl.Model.fromMesh(mesh) catch |err| {
+                commons.print(
+                    "Failed to create model from mesh for world floor: {}\n",
+                    .{err},
+                    .red,
+                );
+                mesh.unload();
+                return;
+            };
+
+            const translate = rl.Matrix.translate(
+                @as(f32, @floatFromInt(self.size.x)) / 2,
+                MIN_WALL_HEIGHT,
+                @as(f32, @floatFromInt(self.size.y)) / 2,
+            );
+            model.*.?.transform = model.*.?.transform.multiply(translate);
+
+            var floor_image = rl.Image.genColor(1, 1, .init(196, 164, 132, 255));
+            defer floor_image.unload();
+            const floor_tex = rl.Texture.fromImage(floor_image) catch |err| {
+                commons.print(
+                    "Failed to create texture for game floor: {}\n",
+                    .{err},
+                    .red,
+                );
+                return;
+            };
+            errdefer floor_tex.unload();
+
+            model.*.?.materials[0].maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = floor_tex;
             model.*.?.materials[0].shader = light_shader;
             self.models_generated += 1;
         }
@@ -305,19 +345,19 @@ fn genTerrainMesh(
     }
 
     // we use malloc because raylib requires using malloc to allocate and free its resources.
-    mesh.vertices = @ptrCast(@alignCast(c.malloc(vertices_size)));
-    mesh.normals = @ptrCast(@alignCast(c.malloc(normals_size)));
-    mesh.texcoords = @ptrCast(@alignCast(c.malloc(texcoords_size)));
-    mesh.indices = @ptrCast(@alignCast(c.malloc(indices_size)));
+    mesh.vertices = @ptrCast(@alignCast(rl.memAlloc(@intCast(vertices_size))));
+    mesh.normals = @ptrCast(@alignCast(rl.memAlloc(@intCast(normals_size))));
+    mesh.texcoords = @ptrCast(@alignCast(rl.memAlloc(@intCast(texcoords_size))));
+    mesh.indices = @ptrCast(@alignCast(rl.memAlloc(@intCast(indices_size))));
 
     if (mesh.vertices == null or mesh.normals == null or
         mesh.texcoords == null or mesh.indices == null)
     {
         // Clean up any allocated memory
-        if (mesh.vertices != null) c.free(mesh.vertices);
-        if (mesh.normals != null) c.free(mesh.normals);
-        if (mesh.texcoords != null) c.free(mesh.texcoords);
-        if (mesh.indices != null) c.free(mesh.indices);
+        if (mesh.vertices != null) rl.memFree(mesh.vertices);
+        if (mesh.normals != null) rl.memFree(mesh.normals);
+        if (mesh.texcoords != null) rl.memFree(mesh.texcoords);
+        if (mesh.indices != null) rl.memFree(mesh.indices);
         return error.OutOfMemory;
     }
 
@@ -401,8 +441,6 @@ fn genWallMesh(
     self: *const Self,
     wall_index: usize,
 ) !rl.Mesh {
-    const MIN_WALL_HEIGHT: f32 = -200.0;
-
     var mesh: rl.Mesh = std.mem.zeroes(rl.Mesh);
     const num_segments = switch (wall_index) {
         0, 1 => self.size.x - 1,

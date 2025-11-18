@@ -186,7 +186,7 @@ pub fn update(self: *Self, game: *Game) !void {
             // Enhanced model rendering with debugging
             if (world_data.allModelsGenerated()) {
                 for (world_data.models) |model| if (model) |m| {
-                    rl.drawModel(m, .zero(), 1.0, .white);
+                    m.draw(.zero(), 1.0, .white);
                 } else unreachable;
             }
         }
