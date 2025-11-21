@@ -54,7 +54,6 @@ pub const WorldDataChunk = struct {
         var wg: std.Thread.WaitGroup = .{};
         for (0..world_data_chunks.len) |i| {
             pool.spawnWg(&wg, genChunk, .{
-                alloc,
                 world_data_chunks,
                 server_world_data,
                 i,
@@ -65,7 +64,6 @@ pub const WorldDataChunk = struct {
     }
 
     fn genChunk(
-        alloc: std.mem.Allocator,
         chunks: []WorldDataChunk,
         server_world_data: *ServerGameData.WorldData,
         i: usize,
@@ -74,14 +72,7 @@ pub const WorldDataChunk = struct {
         const end_idx = @min(start_idx + FLOATS_PER_CHUNK, server_world_data.height_map.len);
 
         chunks[i] = .{
-            .descriptor = std.fmt.allocPrint(alloc, "world_data_chunk-{}", .{i}) catch |err| {
-                commons.print(
-                    "Couldn't create world_data_chunk-{{}} descriptor: {}\n",
-                    .{err},
-                    .red,
-                );
-                return;
-            },
+            .descriptor = "world_data_chunk",
             .chunk_index = @intCast(i),
             .float_start_index = @intCast(start_idx),
             .float_end_index = @intCast(end_idx),

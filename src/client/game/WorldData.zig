@@ -1,7 +1,4 @@
 const std = @import("std");
-const c = @cImport({
-    @cInclude("stdlib.h");
-});
 
 const rl = @import("raylib");
 
@@ -12,7 +9,7 @@ const Settings = @import("client").Settings;
 const Self = @This();
 
 // Reduced model resolution for larger maps
-const MODEL_RESOLUTION = 32; // Reduced from 64
+const MODEL_RESOLUTION = 32;
 
 const MIN_WALL_HEIGHT: f32 = -200.0;
 
@@ -99,7 +96,10 @@ pub fn init(alloc: std.mem.Allocator, first_packet: socket_packet.WorldDataChunk
 }
 
 pub fn addChunk(self: *Self, world_data_chunk: socket_packet.WorldDataChunk) void {
-    @memcpy(self.height_map[world_data_chunk.float_start_index..world_data_chunk.float_end_index], world_data_chunk.height_map);
+    @memcpy(
+        self.height_map[world_data_chunk.float_start_index..world_data_chunk.float_end_index],
+        world_data_chunk.height_map,
+    );
     self._height_map_filled += world_data_chunk.height_map.len;
 }
 
@@ -261,7 +261,6 @@ pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
             model.*.?.materials[0].shader = light_shader;
             self.models_generated += 1;
         } else {
-            std.debug.print("genned floor\n", .{});
             // floor generation
             const mesh = rl.genMeshPlane(@floatFromInt(self.size.x), @floatFromInt(self.size.y), 1, 1);
 
@@ -331,7 +330,6 @@ fn genTerrainMesh(
     mesh.vertexCount = @intCast(vertex_count);
     mesh.triangleCount = @intCast(triangle_count);
 
-    // Use Zig allocator instead of c.malloc for better error handling
     const vertices_size = vertex_count * 3 * @sizeOf(f32);
     const normals_size = vertex_count * 3 * @sizeOf(f32);
     const texcoords_size = vertex_count * 2 * @sizeOf(f32);
@@ -464,18 +462,18 @@ fn genWallMesh(
     const texcoords_size = vertex_count * 2 * @sizeOf(f32);
     const indices_size = triangle_count * 3 * @sizeOf(u16);
 
-    mesh.vertices = @ptrCast(@alignCast(c.malloc(vertices_size)));
-    mesh.normals = @ptrCast(@alignCast(c.malloc(normals_size)));
-    mesh.texcoords = @ptrCast(@alignCast(c.malloc(texcoords_size)));
-    mesh.indices = @ptrCast(@alignCast(c.malloc(indices_size)));
+    mesh.vertices = @ptrCast(@alignCast(rl.memAlloc(vertices_size)));
+    mesh.normals = @ptrCast(@alignCast(rl.memAlloc(normals_size)));
+    mesh.texcoords = @ptrCast(@alignCast(rl.memAlloc(texcoords_size)));
+    mesh.indices = @ptrCast(@alignCast(rl.memAlloc(indices_size)));
 
     if (mesh.vertices == null or mesh.normals == null or
         mesh.texcoords == null or mesh.indices == null)
     {
-        if (mesh.vertices != null) c.free(mesh.vertices);
-        if (mesh.normals != null) c.free(mesh.normals);
-        if (mesh.texcoords != null) c.free(mesh.texcoords);
-        if (mesh.indices != null) c.free(mesh.indices);
+        if (mesh.vertices != null) rl.memFree(mesh.vertices);
+        if (mesh.normals != null) rl.memFree(mesh.normals);
+        if (mesh.texcoords != null) rl.memFree(mesh.texcoords);
+        if (mesh.indices != null) rl.memFree(mesh.indices);
         return error.OutOfMemory;
     }
 

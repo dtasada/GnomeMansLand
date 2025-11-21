@@ -20,8 +20,15 @@ game_data: GameData,
 running: std.atomic.Value(bool),
 polling_rate: u64,
 
+const BYTE_LIMIT: usize = 65535;
+
+const Descriptor = enum {
+    player_state,
+    world_data_chunk,
+};
+
 pub fn init(alloc: std.mem.Allocator, settings: Settings, connect_message: socket_packet.ClientConnect) !*Self {
-    var self: *Self = try alloc.create(Self);
+    var self = try alloc.create(Self);
     errdefer alloc.destroy(self);
 
     self.gpa = .init;
@@ -77,10 +84,10 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
 }
 
 fn listen(self: *Self) !void {
-    const buf = try self.alloc.alloc(u8, 65535); // don't decrease this. decreasing it makes it slower
+    const buf = try self.alloc.alloc(u8, BYTE_LIMIT); // don't decrease this. decreasing it makes it slower
     defer self.alloc.free(buf);
 
-    var pending = try std.ArrayList(u8).initCapacity(self.alloc, 65535);
+    var pending = try std.ArrayList(u8).initCapacity(self.alloc, BYTE_LIMIT);
     defer pending.deinit(self.alloc);
 
     while (self.running.load(.monotonic)) : (std.Thread.sleep(std.time.ns_per_ms * self.polling_rate)) {
@@ -106,12 +113,10 @@ fn listen(self: *Self) !void {
 
         // Process complete lines
         var start: usize = 0;
-        while (true) {
-            if (std.mem.indexOfScalarPos(u8, pending.items, start, '\n')) |pos| {
-                const line = pending.items[start..pos];
-                if (line.len != 0) try self.handleMessage(line);
-                start = pos + 1;
-            } else break;
+        while (std.mem.indexOfScalarPos(u8, pending.items, start, '\n')) |pos| {
+            const line = pending.items[start..pos];
+            if (line.len != 0) try self.handleMessage(line);
+            start = pos + 1;
         }
 
         // Remove processed bytes from buffer
@@ -152,28 +157,34 @@ fn processMessage(
     const key = entry.key_ptr.*;
 
     if (std.mem.eql(u8, key, "descriptor")) {
-        const descriptor = entry.value_ptr.*.string;
+        const descriptor_str = entry.value_ptr.*.string;
+        const descriptor = std.meta.stringToEnum(Descriptor, descriptor_str) orelse {
+            commons.print("Invalid message sent from server. Has descriptor {s}\n", .{descriptor_str}, .yellow);
+            return error.InvalidDescriptor;
+        };
 
-        if (std.mem.eql(u8, descriptor, "player_state")) {
-            const request_parsed = try std.json.parseFromValue(socket_packet.Player, self.alloc, message_root, .{});
-            defer request_parsed.deinit();
+        switch (descriptor) {
+            .player_state => {
+                const request_parsed = try std.json.parseFromValue(socket_packet.Player, self.alloc, message_root, .{});
+                defer request_parsed.deinit();
 
-            const player = request_parsed.value.player;
-            if (self.game_data.players.items.len <= @as(usize, player.id)) {
-                try self.game_data.players.append(self.alloc, player);
-            } else {
-                self.game_data.players.items[@intCast(player.id)] = player;
-            }
-        }
-        if (std.mem.startsWith(u8, descriptor, "world_data_chunk-")) {
-            const request_parsed = try std.json.parseFromValue(socket_packet.WorldDataChunk, self.alloc, message_root, .{});
-            defer request_parsed.deinit();
+                const player = request_parsed.value.player;
+                if (self.game_data.players.items.len <= @as(usize, player.id)) {
+                    try self.game_data.players.append(self.alloc, player);
+                } else {
+                    self.game_data.players.items[@intCast(player.id)] = player;
+                }
+            },
+            .world_data_chunk => {
+                const request_parsed = try std.json.parseFromValue(socket_packet.WorldDataChunk, self.alloc, message_root, .{});
+                defer request_parsed.deinit();
 
-            const world_data_chunk = request_parsed.value;
-            if (self.game_data.world_data) |*world_data|
-                world_data.addChunk(world_data_chunk)
-            else
-                self.game_data.world_data = try GameData.WorldData.init(self.alloc, world_data_chunk);
+                const world_data_chunk = request_parsed.value;
+                if (self.game_data.world_data) |*world_data|
+                    world_data.addChunk(world_data_chunk)
+                else
+                    self.game_data.world_data = try GameData.WorldData.init(self.alloc, world_data_chunk);
+            },
         }
     }
 }

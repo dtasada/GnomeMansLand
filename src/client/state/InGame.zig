@@ -54,7 +54,7 @@ fn getLightShader() !rl.Shader {
 }
 
 /// resets camera back to the middle of the world
-fn resetCamera(self: *Self, game: *Game) void {
+pub fn resetCamera(self: *Self, game: *Game) void {
     if (game.client) |client| {
         if (client.game_data.world_data) |world_data| {
             // Use more reasonable camera positioning to avoid precision issues

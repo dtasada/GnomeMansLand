@@ -70,9 +70,11 @@ pub fn noise(self: *const Self, x: f32, y: f32, z: f32) f32 {
 fn fade(t: f32) f32 {
     return t * t * t * (t * (t * 6 - 15) + 10);
 }
+
 fn lerp(t: f32, a: f32, b: f32) f32 {
     return a + t * (b - a);
 }
+
 fn grad(hash: i32, x: f32, y: f32, z: f32) f32 {
     const h: i32 = hash & 15;
     const u: f32 = if (h < 8) x else y;

@@ -27,12 +27,9 @@ pub fn handleKeys(in_game: *InGame, game: *Game) !void {
             camera.position = camera.position.add(move_vector);
             camera.target = camera.target.add(move_vector);
         }
-        //
+
         // reset camera pan offset
-        if (rl.isKeyPressed(.z)) {
-            camera.position = .{ .x = 256, .y = 256, .z = 256 };
-            camera.target = .{ .x = 0, .y = 0, .z = 0 };
-        }
+        if (rl.isKeyPressed(.z)) in_game.resetCamera(game);
 
         const m = 5;
         camera.fovy = @max(@min(rcamera.MAX_FOV, camera.fovy + -m * rl.getMouseWheelMove()), rcamera.MIN_FOV);

@@ -30,6 +30,12 @@ socket_packets: struct {
     world_data_chunks: []socket_packet.WorldDataChunk,
 },
 
+const Descriptor = enum {
+    client_connect,
+    resend_request,
+    move_player,
+};
+
 const Client = struct {
     sock: network.Socket,
     thread_handle_receive: std.Thread,
@@ -142,53 +148,61 @@ fn handleMessage(self: *Self, client: *const Client, message: []u8) !void {
                 const key = entry.key_ptr.*;
 
                 if (std.mem.eql(u8, key, "descriptor")) {
-                    const descriptor = entry.value_ptr.*.string;
+                    const descriptor_str = entry.value_ptr.*.string;
+                    const descriptor = std.meta.stringToEnum(Descriptor, descriptor_str) orelse {
+                        commons.print("Invalid message received from client, has descriptor {s}\n", .{descriptor_str}, .yellow);
+                        continue;
+                    };
 
-                    commons.print("Server received message with descriptor {s}\n", .{descriptor}, .blue);
-                    if (std.mem.eql(u8, descriptor, "client_connect")) {
-                        const request_parsed = try std.json.parseFromValue(
-                            socket_packet.ClientConnect,
-                            self.alloc,
-                            message_root,
-                            .{},
-                        );
-                        defer request_parsed.deinit();
+                    commons.print("Server received message with descriptor {s}\n", .{descriptor_str}, .blue);
+                    switch (descriptor) {
+                        .client_connect => {
+                            const request_parsed = try std.json.parseFromValue(
+                                socket_packet.ClientConnect,
+                                self.alloc,
+                                message_root,
+                                .{},
+                            );
+                            defer request_parsed.deinit();
 
-                        try self.appendPlayer(request_parsed.value);
+                            try self.appendPlayer(request_parsed.value);
 
-                        // Send world data to the client
-                        if (self.game_data.world_data.network_chunks_ready.load(.monotonic))
-                            for (self.socket_packets.world_data_chunks) |c| {
-                                const world_data_string = try std.json.Stringify.valueAlloc(self.alloc, c, .{});
+                            // Send world data to the client
+                            if (self.game_data.world_data.network_chunks_ready.load(.monotonic))
+                                for (self.socket_packets.world_data_chunks) |c| {
+                                    const world_data_string = try std.json.Stringify.valueAlloc(self.alloc, c, .{});
+                                    defer self.alloc.free(world_data_string);
+
+                                    try client.send(self.alloc, world_data_string);
+                                };
+                        },
+                        .resend_request => {
+                            const request_parsed = try std.json.parseFromValue(
+                                socket_packet.ResendRequest,
+                                self.alloc,
+                                message_root,
+                                .{},
+                            );
+                            defer request_parsed.deinit();
+
+                            const resend_request: socket_packet.ResendRequest = request_parsed.value;
+                            if (std.mem.startsWith(u8, resend_request.body, "world_data_chunk-")) {
+                                var split = std.mem.splitAny(u8, resend_request.body, "-");
+                                split.index = 1;
+                                const chunk_index = try std.fmt.parseInt(u32, split.next().?, 10);
+
+                                const world_data_string = try std.json.Stringify.valueAlloc(self.alloc, self.socket_packets.world_data_chunks[chunk_index], .{});
                                 defer self.alloc.free(world_data_string);
 
                                 try client.send(self.alloc, world_data_string);
-                            };
-                    } else if (std.mem.eql(u8, descriptor, "resend_request")) {
-                        const request_parsed = try std.json.parseFromValue(
-                            socket_packet.ResendRequest,
-                            self.alloc,
-                            message_root,
-                            .{},
-                        );
-                        defer request_parsed.deinit();
+                            }
+                        },
+                        .move_player => {
+                            const request_parsed = try std.json.parseFromValue(socket_packet.MovePlayer, self.alloc, message_root, .{});
+                            defer request_parsed.deinit();
 
-                        const resend_request: socket_packet.ResendRequest = request_parsed.value;
-                        if (std.mem.startsWith(u8, resend_request.body, "world_data_chunk-")) {
-                            var split = std.mem.splitAny(u8, resend_request.body, "-");
-                            split.index = 1;
-                            const chunk_index = try std.fmt.parseInt(u32, split.next().?, 10);
-
-                            const world_data_string = try std.json.Stringify.valueAlloc(self.alloc, self.socket_packets.world_data_chunks[chunk_index], .{});
-                            defer self.alloc.free(world_data_string);
-
-                            try client.send(self.alloc, world_data_string);
-                        }
-                    } else if (std.mem.eql(u8, descriptor, "move_player")) {
-                        const request_parsed = try std.json.parseFromValue(socket_packet.MovePlayer, self.alloc, message_root, .{});
-                        defer request_parsed.deinit();
-
-                        self.game_data.players.items[client.id].position = request_parsed.value.new_pos;
+                            self.game_data.players.items[client.id].position = request_parsed.value.new_pos;
+                        },
                     }
                 }
             }
@@ -255,9 +269,6 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
-    for (self.socket_packets.world_data_chunks) |c|
-        self.alloc.free(c.descriptor);
-
     self.alloc.free(self.socket_packets.world_data_chunks);
 
     self.game_data.deinit(self.alloc);

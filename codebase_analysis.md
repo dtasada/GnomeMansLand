@@ -18,8 +18,6 @@ This report provides an analysis of the Gnome Man's Land codebase, highlighting 
 ## 3. Encapsulation and Modularity
 
 -   **`build.zig`:** The `Module` and `Modules` structs in `build.zig` are a good example of encapsulation. However, the dependency management is very manual and could be simplified. A more declarative approach where each module specifies its own dependencies would be less error-prone.
--   **Global State:** There is some global state, for example, in `src/client/state/ui.zig` (`chalk_font`, `gwathlyn_font`). This could be encapsulated within a UI context struct that is passed around to the functions that need it. This would make the code more modular and easier to test.
--   **Large Files:** Some files are quite large and could be broken down into smaller, more focused modules. For example, `src/client/state/InGame.zig` handles input, rendering, and UI, which could be separated into different files. This would improve maintainability and make the code easier to understand.
 
 ## 4. Performance
 
@@ -29,10 +27,7 @@ This report provides an analysis of the Gnome Man's Land codebase, highlighting 
 
 ## 5. Good Practices and Idiomatic Zig
 
--   **`@cImport`:** The use of `@cImport` to include `stdlib.h` just for `malloc` and `free` is not idiomatic Zig. It's better to use Zig's own allocators, which provide more safety and better integration with the language.
--   **`undefined`:** There are many uses of `undefined`. While sometimes necessary, it's better to initialize variables with a default value to avoid unexpected behavior and make the code easier to reason about.
 -   **Error Sets:** Some functions could benefit from more specific error sets instead of relying on `anyerror`. This would make the error handling more precise and allow the compiler to catch more errors at compile time.
--   **`while (true)`:** There are some `while (true)` loops that could be rewritten to be more expressive, for example, by using a condition variable or a more descriptive loop condition.
 
 ## 6. Specific File Analysis
 
@@ -42,14 +37,9 @@ This report provides an analysis of the Gnome Man's Land codebase, highlighting 
 
 ### `src/client/game/WorldData.zig`
 
--   The use of `c.malloc` should be replaced with a Zig allocator. This will improve safety and make the code more idiomatic.
 -   The `Rgb` and `Color` structs could be moved to a separate file to improve organization and reusability.
 -   The `genTerrainMesh` function is very large and complex. It could be broken down into smaller functions to improve readability and maintainability.
 
-### `src/client/state/InGame.zig`
-
--   This file has grown too large and handles too many responsibilities (input, camera, UI, game logic). It should be refactored into smaller, more focused modules. For example, the input handling logic could be moved to its own file, and the UI drawing code could be moved to a separate UI module.
--   The `handleKeys` function is very long and handles many different inputs. It could be broken down into smaller functions for each type of input (e.g., camera movement, player movement, UI interaction).
 
 ### `src/server/Server.zig`
 

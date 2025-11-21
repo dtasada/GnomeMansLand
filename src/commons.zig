@@ -10,7 +10,6 @@ pub inline fn toSentinel(text: []const u8, buf: [:0]u8) void {
     const n = @min(text.len, buf.len - 1);
     @memcpy(buf[0..n], text[0..n]);
     buf[n] = 0;
-    // return buf[0..n :0];
 }
 
 /// 2-dimensional vector type.
