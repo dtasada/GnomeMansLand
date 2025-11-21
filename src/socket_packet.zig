@@ -5,8 +5,19 @@ const commons = @import("commons");
 
 const ServerGameData = @import("server").GameData;
 
+/// Identifies the different types of messages that can be sent and received.
+pub const Descriptor = enum {
+    player_state,
+    world_data_chunk,
+    server_full,
+    client_connect,
+    move_player,
+    resend_request,
+};
+
+/// Object identifying a new player.
 pub const ClientConnect = struct {
-    descriptor: []const u8 = "client_connect",
+    descriptor: Descriptor = .client_connect,
     nickname: []const u8,
 
     pub fn init(nickname: []const u8) ClientConnect {
@@ -14,18 +25,29 @@ pub const ClientConnect = struct {
     }
 };
 
+/// Object representing a world terrain chunk.
 pub const WorldDataChunk = struct {
+    /// Constant: max length in bytes of a chunk.
     const MAX_SIZE_BYTES: usize = 1024;
+    /// Constant: the length in bytes of a floating point number in JSON.
     const JSON_FLOAT_SIZE: usize = 20;
+    /// Constsant: amount of bytes consumed by miscellaneous JSON boilerplate.
     const JSON_OVERHEAD: usize = 200;
+    /// Constant: amount of bytes available for actual floating point data.
     const AVAILABLE_BYTES_FOR_DATA: usize = MAX_SIZE_BYTES - JSON_OVERHEAD;
+    /// Constant: amount of floating point values that can fit in a chunk.
     pub const FLOATS_PER_CHUNK = @divFloor(AVAILABLE_BYTES_FOR_DATA, JSON_FLOAT_SIZE);
 
-    descriptor: []const u8,
+    descriptor: Descriptor = .world_data_chunk,
+    /// identifies the index of the chunk.
     chunk_index: u32,
+    /// identifies the index of the first float in the chunk relative to the full height map.
     float_start_index: u32,
+    /// identifies the index of the last float in the chunk relative to the full height map.
     float_end_index: u32,
+    /// 2d vector containing the dimensions of the full height map.
     total_size: commons.v2u,
+    /// actual floating point numbers of the chunk to be written into the JSON chunk.
     height_map: []f32, // 2d in practice
 
     /// Asynchronoulsy populates `world_data_chunks`
@@ -63,6 +85,7 @@ pub const WorldDataChunk = struct {
         wg.wait();
     }
 
+    /// Generates a single chunk of index `i`.
     fn genChunk(
         chunks: []WorldDataChunk,
         server_world_data: *ServerGameData.WorldData,
@@ -72,7 +95,6 @@ pub const WorldDataChunk = struct {
         const end_idx = @min(start_idx + FLOATS_PER_CHUNK, server_world_data.height_map.len);
 
         chunks[i] = .{
-            .descriptor = "world_data_chunk",
             .chunk_index = @intCast(i),
             .float_start_index = @intCast(start_idx),
             .float_end_index = @intCast(end_idx),
@@ -88,7 +110,7 @@ pub const WorldDataChunk = struct {
 
 /// Request the server to send a message again.
 pub const ResendRequest = struct { // not in use atm but keeping it in for now just in case.
-    descriptor: []const u8 = "resend_request",
+    descriptor: Descriptor = .resend_request,
     body: []const u8,
 
     pub fn init(body: []const u8) ResendRequest {
@@ -96,8 +118,9 @@ pub const ResendRequest = struct { // not in use atm but keeping it in for now j
     }
 };
 
+/// Represents the player object in the client-server interface.
 pub const Player = struct {
-    descriptor: []const u8 = "player_state",
+    descriptor: Descriptor = .player_state,
     player: ServerGameData.Player,
 
     pub fn init(player: ServerGameData.Player) Player {
@@ -105,11 +128,17 @@ pub const Player = struct {
     }
 };
 
+/// Requests the server to move a player to `new_pos`.
 pub const MovePlayer = struct {
-    descriptor: []const u8 = "move_player",
+    descriptor: Descriptor = .move_player,
     new_pos: commons.v2f,
 
     pub fn init(new_pos: commons.v2f) MovePlayer {
         return .{ .new_pos = new_pos };
     }
+};
+
+/// Send to client when the server is full and has reached the maximum player limit.
+pub const ServerFull = struct {
+    descriptor: Descriptor = .server_full,
 };

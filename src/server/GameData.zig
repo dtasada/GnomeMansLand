@@ -13,6 +13,7 @@ world_data: *WorldData,
 players: std.ArrayList(Player),
 server_settings: ServerSettings,
 
+/// Returns with an empty arraylist of players, and a WorldData pointer.
 pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !Self {
     var players = try std.ArrayList(Player).initCapacity(alloc, settings.max_players);
     errdefer players.deinit(alloc);
@@ -56,7 +57,7 @@ pub const WorldData = struct {
     network_chunks_generated: std.atomic.Value(usize) = .init(0),
     terrain_gen_thread: ?std.Thread = null,
 
-    /// starts genTerrainData thread
+    /// starts genTerrainData thread.
     pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*WorldData {
         const x, const y = settings.world_generation.resolution;
         const self = try alloc.create(WorldData);

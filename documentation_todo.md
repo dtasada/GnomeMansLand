@@ -40,28 +40,7 @@ Although the investigation was cut short, the evidence strongly suggests that ne
 - `update`
 - `waitForServer`
 
-### 3. `/Users/dt/coding/git/GnomeMansLand/src/client/state/InGame.zig`
-
-**Reasoning:** This file contains the main gameplay loop, including the loading screen, rendering, and input handling. The primary `update` function is large, complex, and has almost no comments, making the rendering and game logic flow difficult to follow. The struct fields defining the in-game state are also undocumented.
-
-**Key Symbols to Document:**
-- `InGame` (struct)
-- `update`
-- `init`
-- `resetCamera`
-
-### 4. `/Users/dt/coding/git/GnomeMansLand/src/client/Client.zig`
-
-**Reasoning:** The client-side counterpart to `Server.zig`. It handles the connection and message stream from the server. The core `Client` struct and all its functions are undocumented. The `listen` function contains non-trivial logic for handling partial message streams over TCP, which needs to be explained.
-
-**Key Symbols to Document:**
-- `Client` (struct)
-- `init`
-- `deinit`
-- `listen`
-
 ### 5. `/Users/dt/coding/git/GnomeMansLand/src/socket_packet.zig`
-
 **Reasoning:** Defines the data structures for the entire client-server communication protocol. Most of the packet types are undocumented. The `WorldDataChunk` struct, in particular, uses 'magic numbers' and complex multi-threaded logic to prepare data for networking, none of which is explained.
 
 **Key Symbols to Document:**

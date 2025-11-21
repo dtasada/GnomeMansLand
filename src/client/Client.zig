@@ -22,11 +22,6 @@ polling_rate: u64,
 
 const BYTE_LIMIT: usize = 65535;
 
-const Descriptor = enum {
-    player_state,
-    world_data_chunk,
-};
-
 pub fn init(alloc: std.mem.Allocator, settings: Settings, connect_message: socket_packet.ClientConnect) !*Self {
     var self = try alloc.create(Self);
     errdefer alloc.destroy(self);
@@ -46,14 +41,12 @@ pub fn init(alloc: std.mem.Allocator, settings: Settings, connect_message: socke
         settings.multiplayer.server_host,
         settings.multiplayer.server_port,
         .tcp,
-    ) catch |err| {
-        commons.print(
-            "Couldn't connect to host server at ({s}:{}): {}\n",
-            .{ settings.multiplayer.server_host, settings.multiplayer.server_port, err },
-            .red,
-        );
-        return err;
-    };
+    ) catch |err| return commons.printErr(
+        err,
+        "Couldn't connect to host server at ({s}:{}): {}\n",
+        .{ settings.multiplayer.server_host, settings.multiplayer.server_port, err },
+        .red,
+    );
 
     self.running = std.atomic.Value(bool).init(true);
 
@@ -83,6 +76,7 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     alloc.destroy(self);
 }
 
+/// Meant to run as a thread. Listens for new messages and calls `handleMessage` upon receiving one.
 fn listen(self: *Self) !void {
     const buf = try self.alloc.alloc(u8, BYTE_LIMIT); // don't decrease this. decreasing it makes it slower
     defer self.alloc.free(buf);
@@ -129,6 +123,7 @@ fn listen(self: *Self) !void {
     }
 }
 
+/// Parses a message and calls `processMessage`.
 fn handleMessage(self: *Self, message: []const u8) !void {
     const message_parsed: std.json.Parsed(std.json.Value) = try std.json.parseFromSlice(
         std.json.Value,
@@ -140,52 +135,53 @@ fn handleMessage(self: *Self, message: []const u8) !void {
 
     const message_root = message_parsed.value;
     switch (message_root) {
-        .object => |object| {
-            var it = object.iterator();
-            while (it.next()) |entry|
-                try self.processMessage(message_root, entry);
-        },
-        else => {},
+        .object => |object| try self.processMessage(
+            message_root,
+            try commons.getDescriptor(object, .server),
+        ),
+        else => return commons.printErr(
+            error.InvalidMessage,
+            "Received invalid message from server! JSON package must be an object.",
+            .{},
+            .yellow,
+        ),
     }
 }
 
+/// Actually processes message and responds accordingly.
 fn processMessage(
     self: *Self,
     message_root: std.json.Value,
-    entry: std.StringArrayHashMap(std.json.Value).Entry,
+    descriptor: socket_packet.Descriptor,
 ) !void {
-    const key = entry.key_ptr.*;
+    switch (descriptor) {
+        .player_state => {
+            const request_parsed = try std.json.parseFromValue(socket_packet.Player, self.alloc, message_root, .{});
+            defer request_parsed.deinit();
 
-    if (std.mem.eql(u8, key, "descriptor")) {
-        const descriptor_str = entry.value_ptr.*.string;
-        const descriptor = std.meta.stringToEnum(Descriptor, descriptor_str) orelse {
-            commons.print("Invalid message sent from server. Has descriptor {s}\n", .{descriptor_str}, .yellow);
-            return error.InvalidDescriptor;
-        };
+            const player = request_parsed.value.player;
+            if (self.game_data.players.items.len <= @as(usize, player.id)) {
+                try self.game_data.players.append(self.alloc, player);
+            } else {
+                self.game_data.players.items[@intCast(player.id)] = player;
+            }
+        },
+        .world_data_chunk => {
+            const request_parsed = try std.json.parseFromValue(socket_packet.WorldDataChunk, self.alloc, message_root, .{});
+            defer request_parsed.deinit();
 
-        switch (descriptor) {
-            .player_state => {
-                const request_parsed = try std.json.parseFromValue(socket_packet.Player, self.alloc, message_root, .{});
-                defer request_parsed.deinit();
-
-                const player = request_parsed.value.player;
-                if (self.game_data.players.items.len <= @as(usize, player.id)) {
-                    try self.game_data.players.append(self.alloc, player);
-                } else {
-                    self.game_data.players.items[@intCast(player.id)] = player;
-                }
-            },
-            .world_data_chunk => {
-                const request_parsed = try std.json.parseFromValue(socket_packet.WorldDataChunk, self.alloc, message_root, .{});
-                defer request_parsed.deinit();
-
-                const world_data_chunk = request_parsed.value;
-                if (self.game_data.world_data) |*world_data|
-                    world_data.addChunk(world_data_chunk)
-                else
-                    self.game_data.world_data = try GameData.WorldData.init(self.alloc, world_data_chunk);
-            },
-        }
+            const world_data_chunk = request_parsed.value;
+            if (self.game_data.world_data) |*world_data|
+                world_data.addChunk(world_data_chunk)
+            else
+                self.game_data.world_data = try GameData.WorldData.init(self.alloc, world_data_chunk);
+        },
+        .server_full => @panic("unimplemented"),
+        else => commons.print(
+            "Received message with illegal descriptor {s} received from server\n",
+            .{@tagName(descriptor)},
+            .yellow,
+        ),
     }
 }
 

@@ -80,14 +80,15 @@ pub fn build(b: *std.Build) void {
     const raygui_mod: Module = .init("raygui", raylib_dep.module("raygui"));
     const network_mod: Module = .init("network", b.dependency("network", .{}).module("network"));
 
-    const commons_mod = modules.create("commons", "src/commons.zig");
-
     const socket_packet_mod = modules.create("socket_packet", "src/socket_packet.zig");
+
+    const commons_mod = modules.create("commons", "src/commons.zig").addImports(&.{socket_packet_mod});
 
     const client_mod = modules.create("client", "src/client/Client.zig");
     const server_mod = modules.create("server", "src/server/Server.zig");
-    network_mod.importTo(&.{ client_mod, server_mod });
     socket_packet_mod.addImport(server_mod);
+
+    network_mod.importTo(&.{ client_mod, server_mod });
 
     const state_mod = modules.create("state", "src/client/state/State.zig");
 

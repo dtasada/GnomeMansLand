@@ -1,3 +1,5 @@
+//! Object that contains all game UIs and states such as the in-game struct, lobby uis, etc.
+
 const Game = @import("game");
 const Client = @import("client");
 const Server = @import("server");
@@ -30,6 +32,7 @@ client_setup: ClientSetup,
 server_setup: ServerSetup,
 in_game: InGame,
 
+/// Initializes all states and defaults to Lobby.
 pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
     return .{
         .state = .lobby,
@@ -41,6 +44,7 @@ pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
     };
 }
 
+/// Deinitializes all states.
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     self.client_setup.deinit(alloc);
     self.server_setup.deinit(alloc);
@@ -49,6 +53,7 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     self.in_game.deinit(alloc);
 }
 
+/// Updates the current active state.
 pub fn update(self: *Self, game: *Game) !void {
     switch (self.state) {
         .lobby => try self.lobby.update(game.alloc, self),
@@ -91,6 +96,7 @@ pub fn openGame(game: *Game) !void {
     }
 }
 
+/// (Re)initializes server. Starts a thread for `waitForServer`
 pub fn hostServer(game: *Game) !void {
     if (game.server) |s| s.deinit(game.alloc);
 
@@ -100,6 +106,7 @@ pub fn hostServer(game: *Game) !void {
     t.detach();
 }
 
+/// Starts server world chunk generation.
 fn waitForServer(game: *Game) !void {
     var chunk_thread: ?std.Thread = null;
     if (game.server) |server| {

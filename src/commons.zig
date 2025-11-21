@@ -3,6 +3,8 @@
 const std = @import("std");
 const rl = @import("raylib");
 
+const socket_packet = @import("socket_packet");
+
 /// Returns null-terminated string from `text`.
 /// Caller must `@ptrCast()` to cast to a `[:0]const u8`.
 /// Caller owns memory.
@@ -75,3 +77,26 @@ pub const ServerSettings = struct {
         amplitude: f32,
     },
 };
+
+/// Gets descriptor field from a JSON object and converts it to a `socket_packet.Descriptor`.
+/// `source` is either
+pub fn getDescriptor(
+    object: @FieldType(std.json.Value, "object"),
+    comptime source: enum { server, client },
+) !socket_packet.Descriptor {
+    const descriptor_obj = object.get("descriptor") orelse
+        return printErr(
+            error.InvalidMessage,
+            "Received message from " ++ @tagName(source) ++ " without a descriptor!",
+            .{},
+            .yellow,
+        );
+
+    return std.meta.stringToEnum(socket_packet.Descriptor, descriptor_obj.string) orelse
+        printErr(
+            error.InvalidMessage,
+            "Received message with invalid descriptor {s} from " ++ @tagName(source) ++ ".\n",
+            .{descriptor_obj.string},
+            .yellow,
+        );
+}
