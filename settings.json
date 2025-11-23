@@ -12,7 +12,7 @@
         "polling_rate": 10
     },
     "server": {
-        "max_players": 8,
+        "max_players": 1,
         "port": 4269,
         "polling_rate": 10,
         "world_generation": {

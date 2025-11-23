@@ -21,11 +21,9 @@ lights: std.ArrayList(Game.Light) = .{},
 light_shader: rl.Shader,
 
 pub fn init(alloc: std.mem.Allocator) !Self {
-    var self: Self = .{
-        .light_shader = try getLightShader(),
-    };
+    var self: Self = .{ .light_shader = try getLightShader() };
 
-    try self.lights.append(alloc, Game.Light.init(
+    try self.lights.append(alloc, .init(
         .point,
         .init(200, 200, 0),
         .zero(),

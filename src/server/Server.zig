@@ -191,16 +191,11 @@ fn processMessage(
             );
             defer request_parsed.deinit();
 
-            self.appendPlayer(request_parsed.value) catch |err| {
-                try client.send(
-                    self.alloc,
-                    try std.json.Stringify.valueAlloc(
-                        self.alloc,
-                        socket_packet.ServerFull{},
-                        .{},
-                    ),
-                );
-                return err;
+            self.appendPlayer(request_parsed.value) catch {
+                const server_full = try std.json.Stringify.valueAlloc(self.alloc, socket_packet.ServerFull{}, .{});
+                defer self.alloc.free(server_full);
+                try client.send(self.alloc, server_full);
+                return;
             };
 
             // Send world data to the client
@@ -349,7 +344,7 @@ fn listen(self: *Self) !void {
             .thread_handle_receive = try std.Thread.spawn(.{}, handleClientReceive, .{ self, client }),
             .thread_handle_send = try std.Thread.spawn(.{}, handleClientSend, .{ self, client }),
             .id = @intCast(self.clients.items.len),
-            .open = std.atomic.Value(bool).init(true),
+            .open = .init(true),
         };
 
         try self.clients.append(self.alloc, client);

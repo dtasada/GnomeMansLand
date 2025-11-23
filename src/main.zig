@@ -29,7 +29,6 @@ pub fn main() !void {
         ),
         else => return err,
     };
-
     defer game.deinit(alloc);
 
     // Main game loop here
