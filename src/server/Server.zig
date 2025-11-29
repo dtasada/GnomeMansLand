@@ -13,7 +13,7 @@ const ServerSettings = commons.ServerSettings;
 
 const Self = @This();
 
-var polling_rate: u64 = undefined;
+const BYTE_LIMIT: usize = 65535;
 
 gpa: std.heap.DebugAllocator(.{}),
 tsa: std.heap.ThreadSafeAllocator,
@@ -39,7 +39,7 @@ settings: ServerSettings,
 
 /// Contains cached data to be sent to clients.
 socket_packets: struct {
-    world_data_chunks: []socket_packet.WorldDataChunk,
+    map_chunks: []socket_packet.MapChunk,
 },
 
 /// Wrapper around a single client construct.
@@ -67,7 +67,7 @@ const Client = struct {
         while (true) {
             _ = self.sock.send(message_newline) catch |err| switch (err) {
                 error.WouldBlock => {
-                    std.Thread.sleep(polling_rate * std.time.ns_per_ms);
+                    std.Thread.sleep(200 * std.time.ns_per_ms);
                     continue;
                 },
                 error.ConnectionResetByPeer, error.BrokenPipe => break, // caller decides to stop
@@ -91,7 +91,7 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
     var buf: []u8 = try self.alloc.alloc(u8, 65535);
     defer self.alloc.free(buf);
 
-    while (self.running.load(.monotonic)) : (std.Thread.sleep(polling_rate * std.time.ns_per_ms)) {
+    while (self.running.load(.monotonic)) {
         const bytes_read = client.sock.receive(buf) catch |err| switch (err) {
             error.WouldBlock => continue,
             error.ConnectionResetByPeer => {
@@ -116,25 +116,30 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
 
         // handle current message
         try self.handleMessage(client, message);
+        std.Thread.sleep(self.settings.polling_rate * std.time.ns_per_ms);
     }
 
     _ = self.clients.orderedRemove(client.id);
+    self.alloc.destroy(client);
     commons.print("Client disconnected.\n", .{}, .blue);
 }
 
 /// Continuously sends all necessary game info to `client`. Blocking.
 fn handleClientSend(self: *const Self, client: *const Client) !void {
-    loop: while (self.running.load(.monotonic) and client.open.load(.monotonic)) : (std.Thread.sleep(polling_rate * std.time.ns_per_ms)) {
+    loop: while (self.running.load(.monotonic) and client.open.load(.monotonic)) {
         // send necessary game info
         for (self.game_data.players.items) |p| {
             const player_packet = socket_packet.Player.init(p);
-            const player_string = std.json.Stringify.valueAlloc(self.alloc, player_packet, .{}) catch |err|
-                return commons.printErr(
-                    err,
-                    "Could not stringify packet: {}\n",
-                    .{err},
-                    .red,
-                );
+            const player_string = std.json.Stringify.valueAlloc(
+                self.alloc,
+                player_packet,
+                .{},
+            ) catch |err| return commons.printErr(
+                err,
+                "Could not stringify packet: {}\n",
+                .{err},
+                .red,
+            );
 
             defer self.alloc.free(player_string);
 
@@ -143,6 +148,8 @@ fn handleClientSend(self: *const Self, client: *const Client) !void {
                 else => return err,
             };
         }
+
+        std.Thread.sleep(self.settings.polling_rate * std.time.ns_per_ms);
     }
 }
 
@@ -191,21 +198,24 @@ fn processMessage(
             );
             defer request_parsed.deinit();
 
-            self.appendPlayer(request_parsed.value) catch {
-                const server_full = try std.json.Stringify.valueAlloc(self.alloc, socket_packet.ServerFull{}, .{});
-                defer self.alloc.free(server_full);
-                try client.send(self.alloc, server_full);
-                return;
+            self.appendPlayer(request_parsed.value) catch |err| switch (err) {
+                error.ServerFull => {
+                    const server_full = try std.json.Stringify.valueAlloc(self.alloc, socket_packet.ServerFull{}, .{});
+                    defer self.alloc.free(server_full);
+                    try client.send(self.alloc, server_full);
+                    return;
+                },
+                else => return err,
             };
 
-            // Send world data to the client
-            if (self.game_data.world_data.network_chunks_ready.load(.monotonic))
-                for (self.socket_packets.world_data_chunks) |c| {
-                    const world_data_string = try std.json.Stringify.valueAlloc(self.alloc, c, .{});
-                    defer self.alloc.free(world_data_string);
+            // Send map data to the client
+            while (!self.game_data.map.network_chunks_ready.load(.monotonic)) {}
+            for (self.socket_packets.map_chunks) |c| {
+                const map_string = try std.json.Stringify.valueAlloc(self.alloc, c, .{});
+                defer self.alloc.free(map_string);
 
-                    try client.send(self.alloc, world_data_string);
-                };
+                try client.send(self.alloc, map_string);
+            }
         },
         .resend_request => {
             const request_parsed = try std.json.parseFromValue(
@@ -216,17 +226,8 @@ fn processMessage(
             );
             defer request_parsed.deinit();
 
-            const resend_request: socket_packet.ResendRequest = request_parsed.value;
-            if (std.mem.startsWith(u8, resend_request.body, "world_data_chunk-")) {
-                var split = std.mem.splitAny(u8, resend_request.body, "-");
-                split.index = 1;
-                const chunk_index = try std.fmt.parseInt(u32, split.next().?, 10);
-
-                const world_data_string = try std.json.Stringify.valueAlloc(self.alloc, self.socket_packets.world_data_chunks[chunk_index], .{});
-                defer self.alloc.free(world_data_string);
-
-                try client.send(self.alloc, world_data_string);
-            }
+            // const resend_request: socket_packet.ResendRequest = request_parsed.value;
+            @panic("unimplemented");
         },
         .move_player => {
             const request_parsed = try std.json.parseFromValue(socket_packet.MovePlayer, self.alloc, message_root, .{});
@@ -241,7 +242,22 @@ fn processMessage(
     }
 }
 
-/// `game_data` and `socket_packets.world_data_chunks` are populated asynchronously
+fn prepareMapChunks(self: *Self) !void {
+    // Wait for the main map to finish generating
+    while (!self.game_data.map.finished_generating.load(.monotonic)) {
+        std.Thread.sleep(100 * std.time.ns_per_ms);
+    }
+
+    // Now that the map is ready, generate the network chunks from it.
+    const chunk_gen_thread = try socket_packet.MapChunk.init(
+        self.alloc,
+        self.game_data.map,
+        self.socket_packets.map_chunks,
+    );
+    chunk_gen_thread.join();
+}
+
+/// `game_data` and `socket_packets.map_chunks` are populated asynchronously
 pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     var self = try alloc.create(Self);
     errdefer alloc.destroy(self);
@@ -261,20 +277,21 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     errdefer self.game_data.deinit(self.alloc);
 
     self.socket_packets = .{
-        .world_data_chunks = try self.alloc.alloc(
-            socket_packet.WorldDataChunk,
+        .map_chunks = try self.alloc.alloc(
+            socket_packet.MapChunk,
             @divFloor(
-                self.game_data.world_data.height_map.len,
-                socket_packet.WorldDataChunk.FLOATS_PER_CHUNK,
+                self.game_data.map.height_map.len,
+                socket_packet.MapChunk.FLOATS_PER_CHUNK,
             ) + @intFromBool(
-                self.game_data.world_data.height_map.len %
-                    socket_packet.WorldDataChunk.FLOATS_PER_CHUNK != 0,
+                self.game_data.map.height_map.len %
+                    socket_packet.MapChunk.FLOATS_PER_CHUNK != 0,
             ),
         ),
     };
-    errdefer self.alloc.free(self.socket_packets.world_data_chunks);
+    errdefer self.alloc.free(self.socket_packets.map_chunks);
 
-    polling_rate = self.settings.polling_rate;
+    const t = try std.Thread.spawn(.{}, Self.prepareMapChunks, .{self});
+    t.detach();
 
     try network.init();
     errdefer network.deinit();
@@ -302,7 +319,7 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
-    self.alloc.free(self.socket_packets.world_data_chunks);
+    self.alloc.free(self.socket_packets.map_chunks);
 
     self.game_data.deinit(self.alloc);
     self.running.store(false, .monotonic);
@@ -336,7 +353,7 @@ fn listen(self: *Self) !void {
             },
         };
 
-        var client: *Client = try self.alloc.create(Client);
+        var client = try self.alloc.create(Client);
         errdefer self.alloc.destroy(client);
 
         client.* = .{
@@ -360,8 +377,8 @@ fn appendPlayer(self: *Self, connect_request: socket_packet.ClientConnect) !void
     const nickname_dupe = try self.alloc.dupe(u8, connect_request.nickname);
     errdefer self.alloc.free(nickname_dupe);
 
-    try self.game_data.players.appendBounded(GameData.Player.init(
+    self.game_data.players.appendBounded(GameData.Player.init(
         @intCast(self.game_data.players.items.len),
         nickname_dupe,
-    ));
+    )) catch return error.ServerFull;
 }

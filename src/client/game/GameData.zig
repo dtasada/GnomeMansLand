@@ -9,23 +9,23 @@ const Settings = @import("client").Settings;
 
 const Player = @import("server").GameData.Player;
 
-pub const WorldData = @import("WorldData.zig");
+pub const Map = @import("Map.zig");
 
 const Self = @This();
 
-world_data: ?WorldData,
+map: ?Map,
 players: std.ArrayList(Player),
 
 pub fn init(alloc: std.mem.Allocator) !Self {
     return .{
-        .world_data = null,
+        .map = null,
         .players = try std.ArrayList(Player).initCapacity(alloc, 1),
     };
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
-    if (self.world_data) |*world_data|
-        world_data.deinit(alloc);
+    if (self.map) |*map|
+            map.deinit(alloc);
 
     self.players.deinit(alloc);
 }

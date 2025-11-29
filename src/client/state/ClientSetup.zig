@@ -58,7 +58,7 @@ pub fn update(self: *Self, game: *Game) !void {
     });
 
     self.button_set.update(.{
-        .{ State.openGame, .{game} },
+        .{ State.openGameRemote, .{game} },
         .{ State.openLobby, .{game} },
     }) catch |err| switch (err) {
         error.CouldNotConnect => {
@@ -66,7 +66,7 @@ pub fn update(self: *Self, game: *Game) !void {
                 .body = "Couldn't connect to server!",
                 .color = .red,
                 .x = ui.getRight(self.button_set.buttons[0].getHitbox()) + 12.0,
-                .y = self.button_set.buttons[0].getHitbox().y,
+                .y = self.button_set.buttons[0].getHitbox().y + 4.0,
             });
         },
         else => return err,

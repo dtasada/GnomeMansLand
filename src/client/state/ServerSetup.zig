@@ -51,30 +51,30 @@ pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
 
 pub fn update(self: *Self, game: *Game) !void {
     if (game.server) |server| {
-        const world_data = server.game_data.world_data;
-        if (!world_data.finished_generating.load(.monotonic) or
-            !world_data.network_chunks_ready.load(.monotonic))
+        const map = server.game_data.map;
+        if (!map.finished_generating.load(.monotonic) or
+            !map.network_chunks_ready.load(.monotonic))
         {
             rl.beginDrawing();
             rl.clearBackground(.black);
 
             var buf: [24]u8 = undefined;
-            const body = if (!world_data.finished_generating.load(.monotonic))
+            const body = if (!map.finished_generating.load(.monotonic))
                 try std.fmt.bufPrint(
                     &buf,
                     "Creating world ({}%)...",
                     .{@divFloor(
-                        world_data.floats_written,
-                        world_data.height_map.len,
+                        map.floats_written,
+                        map.height_map.len,
                     )},
                 )
-            else if (!world_data.network_chunks_ready.load(.monotonic))
+            else if (!map.network_chunks_ready.load(.monotonic))
                 try std.fmt.bufPrint(
                     &buf,
                     "Preparing world ({}%)...",
                     .{@divFloor(
-                        100 * world_data.network_chunks_generated.load(.monotonic),
-                        server.socket_packets.world_data_chunks.len,
+                        100 * map.network_chunks_generated.load(.monotonic),
+                        server.socket_packets.map_chunks.len,
                     )},
                 )
             else

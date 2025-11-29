@@ -123,6 +123,7 @@ fn setupRaylib(settings: Settings) void {
         .vsync_hint = true,
         .window_resizable = true,
         .msaa_4x_hint = true,
+        .window_topmost = true,
     });
 
     rl.setTraceLogLevel(.warning);

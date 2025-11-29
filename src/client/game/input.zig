@@ -97,8 +97,8 @@ fn toggleMouse(is_enabled: *bool) void {
 fn getMouseToWorld(in_game: *const InGame, game: *Game) ?rl.Vector3 {
     if (in_game.camera) |camera| {
         if (game.client) |client| {
-            if (client.game_data.world_data) |world_data| {
-                for (world_data.models) |model| {
+            if (client.game_data.map) |map| {
+                for (map.models) |model| {
                     if (model) |m| {
                         const mouse_pos_ray = rl.getScreenToWorldRay(rl.getMousePosition(), camera);
                         const mouse_world_collision = rl.getRayCollisionMesh(mouse_pos_ray, m.meshes[0], m.transform);

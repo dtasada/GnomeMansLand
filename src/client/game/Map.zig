@@ -1,3 +1,5 @@
+//! Container for all local client map data.
+
 const std = @import("std");
 
 const rl = @import("raylib");
@@ -6,51 +8,35 @@ const commons = @import("commons");
 const socket_packet = @import("socket_packet");
 const Settings = @import("client").Settings;
 
+const Rgb = @import("Rgb.zig");
+
 const Self = @This();
 
-// Reduced model resolution for larger maps
+/// Reduced model resolution for larger maps
 const MODEL_RESOLUTION = 32;
-
 const MIN_WALL_HEIGHT: f32 = -200.0;
 
-height_map: []f32, // 2d in practice
+/// Actual 2D height map data.
+height_map: []f32,
+/// Amount of numbers that have been read into `height_map`. Range (0..=height_map.len)
 _height_map_filled: usize = 0,
+
+/// Is true if this client is responsible for cleaning up the height map.
+/// Only false if this game instance also is a server host.
+owns_height_map: bool,
+
+/// 2d vector of the size of the map
 size: commons.v2u,
+
+/// Slice of map models used for rendering.
+/// Optional for safety because models are loaded in asynchronously
 models: []?rl.Model,
+/// Amount of models generated, range (0..=models.len)
 models_generated: usize = 0,
-gen_models_thread: ?std.Thread = null,
 
-const Rgb = struct {
-    r: i16,
-    g: i16,
-    b: i16,
+terrain_heights: TerrainHeights = .{},
 
-    fn init(r: i16, g: i16, b: i16) Rgb {
-        return .{ .r = r, .g = g, .b = b };
-    }
-
-    fn add(lhs: Rgb, rhs: Rgb) Rgb {
-        return Rgb.init(lhs.r + rhs.r, lhs.g + rhs.g, lhs.b + rhs.b);
-    }
-
-    fn subtract(lhs: Rgb, rhs: Rgb) Rgb {
-        return Rgb.init(lhs.r -| rhs.r, lhs.g -| rhs.g, lhs.b -| rhs.b);
-    }
-
-    fn scale(lhs: Rgb, m: f32) Rgb {
-        const m_ = @max(m, 0.0);
-        return Rgb.init(
-            @intFromFloat(@as(f32, @floatFromInt(lhs.r)) * m_),
-            @intFromFloat(@as(f32, @floatFromInt(lhs.g)) * m_),
-            @intFromFloat(@as(f32, @floatFromInt(lhs.b)) * m_),
-        );
-    }
-
-    fn lerp(lhs: Rgb, rhs: Rgb, m: f32) Rgb {
-        return lhs.add(rhs.subtract(lhs).scale(m));
-    }
-};
-
+/// Namespace containing the colors for each terrain type.
 const Color = struct {
     const WATER_LOW = Rgb.init(0, 0, 50);
     const WATER_HIGH = Rgb.init(30, 110, 140);
@@ -62,28 +48,33 @@ const Color = struct {
     const MOUNTAIN_HIGH = Rgb.init(120, 120, 120);
 };
 
-const TileData = struct {
-    pub var water: f32 = 0.40;
-    pub var sand: f32 = 0.43;
-    pub var grass: f32 = 0.61;
-    pub var mountain: f32 = 0.68;
-    pub var snow: f32 = 1.0;
+/// Struct containing the terrain height associated with each terrain type.
+const TerrainHeights = struct {
+    water: f32 = 0.40,
+    sand: f32 = 0.43,
+    grass: f32 = 0.61,
+    mountain: f32 = 0.68,
+    snow: f32 = 1.0,
 };
 
-pub fn init(alloc: std.mem.Allocator, first_packet: socket_packet.WorldDataChunk) !Self {
+pub fn init(alloc: std.mem.Allocator, first_packet: socket_packet.MapChunk) !Self {
     const chunks_x = (first_packet.total_size.x + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
     const chunks_y = (first_packet.total_size.y + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
     const amount_of_terrain_models = chunks_x * chunks_y;
     const amount_of_models = amount_of_terrain_models + 5;
 
     // Add safety check for too many models
-    if (amount_of_models > 2048) {
-        commons.print("Warning: {} models requested, this may cause performance issues\n", .{amount_of_models}, .yellow);
-    }
+    if (amount_of_models > 2048)
+        commons.print(
+            "Warning: {} models requested, this may cause performance issues\n",
+            .{amount_of_models},
+            .yellow,
+        );
 
     var self: Self = .{
         .size = first_packet.total_size,
         .height_map = try alloc.alloc(f32, first_packet.total_size.x * first_packet.total_size.y),
+        .owns_height_map = true,
         .models = b: {
             const m = try alloc.alloc(?rl.Model, amount_of_models);
             @memset(m, null);
@@ -95,12 +86,42 @@ pub fn init(alloc: std.mem.Allocator, first_packet: socket_packet.WorldDataChunk
     return self;
 }
 
-pub fn addChunk(self: *Self, world_data_chunk: socket_packet.WorldDataChunk) void {
+pub fn initFromExisting(alloc: std.mem.Allocator, server_world: *@import("server").GameData.Map) !Self {
+    const chunks_x = (server_world.size.x + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
+    const chunks_y = (server_world.size.y + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
+    const amount_of_terrain_models = chunks_x * chunks_y;
+    const amount_of_models = amount_of_terrain_models + 5;
+
+    // Add safety check for too many models
+    if (amount_of_models > 2048)
+        commons.print(
+            "Warning: {} models requested, this may cause performance issues\n",
+            .{amount_of_models},
+            .yellow,
+        );
+
+    var self: Self = .{
+        .size = server_world.size,
+        .height_map = server_world.height_map,
+        .owns_height_map = false,
+        .models = b: {
+            const m = try alloc.alloc(?rl.Model, amount_of_models);
+            @memset(m, null);
+            break :b m;
+        },
+    };
+
+    self._height_map_filled = self.height_map.len;
+
+    return self;
+}
+
+pub fn addChunk(self: *Self, map_chunk: socket_packet.MapChunk) void {
     @memcpy(
-        self.height_map[world_data_chunk.float_start_index..world_data_chunk.float_end_index],
-        world_data_chunk.height_map,
+        self.height_map[map_chunk.float_start_index..map_chunk.float_end_index],
+        map_chunk.height_map,
     );
-    self._height_map_filled += world_data_chunk.height_map.len;
+    self._height_map_filled += map_chunk.height_map.len;
 }
 
 pub fn allFloatsDownloaded(self: *const Self) bool {
@@ -112,11 +133,7 @@ pub fn allModelsGenerated(self: *const Self) bool {
 }
 
 pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
-    alloc.free(self.height_map);
-
-    if (self.gen_models_thread) |t| {
-        t.join();
-    }
+    if (self.owns_height_map) alloc.free(self.height_map);
 
     // Free GPU resources
     for (self.models) |model| if (model) |m| rl.unloadModel(m);
@@ -163,14 +180,14 @@ pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
                     const AMPLITUDE = 180;
                     const height = (self.getHeight(x, y) + AMPLITUDE) / (2 * AMPLITUDE);
                     const tile: Rgb =
-                        if (height <= TileData.water)
-                            Color.WATER_LOW.lerp(Color.WATER_HIGH, height / TileData.water)
-                        else if (height <= TileData.sand)
-                            Color.SAND_LOW.lerp(Color.SAND_HIGH, (height - TileData.water) / (TileData.sand - TileData.water))
-                        else if (height <= TileData.grass)
-                            Color.GRASS_LOW.lerp(Color.GRASS_HIGH, (height - TileData.sand) / (TileData.grass - TileData.sand))
-                        else if (height <= TileData.mountain)
-                            Color.MOUNTAIN_LOW.lerp(Color.MOUNTAIN_HIGH, (height - TileData.grass) / (TileData.mountain - TileData.grass))
+                        if (height <= self.terrain_heights.water)
+                            Color.WATER_LOW.lerp(Color.WATER_HIGH, height / self.terrain_heights.water)
+                        else if (height <= self.terrain_heights.sand)
+                            Color.SAND_LOW.lerp(Color.SAND_HIGH, (height - self.terrain_heights.water) / (self.terrain_heights.sand - self.terrain_heights.water))
+                        else if (height <= self.terrain_heights.grass)
+                            Color.GRASS_LOW.lerp(Color.GRASS_HIGH, (height - self.terrain_heights.sand) / (self.terrain_heights.grass - self.terrain_heights.sand))
+                        else if (height <= self.terrain_heights.mountain)
+                            Color.MOUNTAIN_LOW.lerp(Color.MOUNTAIN_HIGH, (height - self.terrain_heights.grass) / (self.terrain_heights.mountain - self.terrain_heights.grass))
                         else
                             Rgb.init(240, 240, 240);
 

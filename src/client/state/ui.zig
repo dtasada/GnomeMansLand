@@ -166,10 +166,13 @@ pub const ButtonSet = struct {
 
     pub fn update(self: *const ButtonSet, actions_and_args: anytype) !void {
         const fields = std.meta.fields(@TypeOf(actions_and_args));
-        if (fields.len != self.buttons.len) {
-            commons.print("Amount of tuples passed to ButtonSet.update must equal amount of buttons passed in ButtonSet.init\n", .{}, .red);
-            return error.ButtonSetNotMatching;
-        }
+        if (fields.len != self.buttons.len)
+            return commons.printErr(
+                error.ButtonSetNotMatching,
+                "Amount of tuples passed to ButtonSet.update must equal amount of buttons passed in ButtonSet.init\n",
+                .{},
+                .red,
+            );
 
         inline for (fields, 0..) |field, i| {
             const button_actions_and_args = @field(actions_and_args, field.name);

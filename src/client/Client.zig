@@ -12,7 +12,6 @@ pub const Settings = @import("Settings.zig");
 
 const Self = @This();
 
-gpa: std.heap.DebugAllocator(.{}),
 alloc: std.mem.Allocator,
 sock: network.Socket,
 listen_thread: std.Thread,
@@ -26,9 +25,7 @@ pub fn init(alloc: std.mem.Allocator, settings: Settings, connect_message: socke
     var self = try alloc.create(Self);
     errdefer alloc.destroy(self);
 
-    self.gpa = .init;
-    self.alloc = self.gpa.allocator();
-    errdefer _ = self.gpa.deinit();
+    self.alloc = alloc;
 
     self.game_data = try GameData.init(self.alloc);
     errdefer self.game_data.deinit(self.alloc);
@@ -49,10 +46,11 @@ pub fn init(alloc: std.mem.Allocator, settings: Settings, connect_message: socke
     );
 
     self.running = std.atomic.Value(bool).init(true);
+    errdefer self.running.store(false, .monotonic);
 
     const connect_message_json = try std.json.Stringify.valueAlloc(self.alloc, connect_message, .{});
     defer self.alloc.free(connect_message_json);
-    _ = try self.sock.send(connect_message_json);
+    _ = try self.send(connect_message_json);
 
     self.listen_thread = try std.Thread.spawn(.{}, Self.listen, .{self});
     self.polling_rate = settings.multiplayer.polling_rate;
@@ -72,7 +70,6 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
 
     network.deinit();
 
-    _ = self.gpa.deinit();
     alloc.destroy(self);
 }
 
@@ -166,15 +163,20 @@ fn processMessage(
                 self.game_data.players.items[@intCast(player.id)] = player;
             }
         },
-        .world_data_chunk => {
-            const request_parsed = try std.json.parseFromValue(socket_packet.WorldDataChunk, self.alloc, message_root, .{});
+        .map_chunk => {
+            // if we don't own the map, we're the host, so we don't need to download it
+            if (self.game_data.map) |*map| {
+                if (!map.owns_height_map) return;
+            }
+
+            const request_parsed = try std.json.parseFromValue(socket_packet.MapChunk, self.alloc, message_root, .{});
             defer request_parsed.deinit();
 
-            const world_data_chunk = request_parsed.value;
-            if (self.game_data.world_data) |*world_data|
-                world_data.addChunk(world_data_chunk)
+            const map_chunk = request_parsed.value;
+            if (self.game_data.map) |*map|
+                map.addChunk(map_chunk)
             else
-                self.game_data.world_data = try GameData.WorldData.init(self.alloc, world_data_chunk);
+                self.game_data.map = try GameData.Map.init(self.alloc, map_chunk);
         },
         .server_full => @panic("unimplemented"),
         else => commons.print(

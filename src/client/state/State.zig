@@ -81,15 +81,33 @@ pub fn serverSetup(self: *Self) void {
     self.state = .server_setup;
 }
 
-/// Creates client and opens game
-pub fn openGame(game: *Game) !void {
+/// Creates client and opens game normally.
+pub fn openGameRemote(game: *Game) !void {
     if (game.state.lobby.nickname_input.len != 0) { // only if nickname isn't empty
         if (game.client) |client| client.deinit(game.alloc);
 
+        const client_connect = socket_packet.ClientConnect.init(game.state.lobby.nickname_input.inner_text.body);
+        game.client = try Client.init(game.alloc, game.settings, client_connect);
+        game.state.state = .game;
+    }
+}
+
+/// Creates client and opens game, copying map data directly from local server
+pub fn openGameLocal(game: *Game) !void {
+    if (game.state.lobby.nickname_input.len != 0) { // only if nickname isn't empty
+        if (game.client) |client| client.deinit(game.alloc);
+
+        // Create the client
         game.client = try Client.init(
             game.alloc,
             game.settings,
             socket_packet.ClientConnect.init(game.state.lobby.nickname_input.inner_text.body),
+        );
+
+        // Perform the memory copy
+        game.client.?.game_data.map = try Game.GameData.Map.initFromExisting(
+            game.alloc,
+            game.server.?.game_data.map,
         );
 
         game.state.state = .game;
@@ -106,28 +124,8 @@ pub fn hostServer(game: *Game) !void {
     t.detach();
 }
 
-/// Starts server world chunk generation.
+/// Waits for server to finish generating world, then opens the game locally.
 fn waitForServer(game: *Game) !void {
-    var chunk_thread: ?std.Thread = null;
-    if (game.server) |server| {
-        while (true) {
-            if (server.game_data.world_data.finished_generating.load(.monotonic)) {
-                if (chunk_thread == null) {
-                    chunk_thread = try socket_packet.WorldDataChunk.init(
-                        server.alloc,
-                        server.game_data.world_data,
-                        server.socket_packets.world_data_chunks,
-                    );
-                }
-
-                if (server.game_data.world_data.network_chunks_ready.load(.monotonic)) {
-                    if (chunk_thread) |t| t.join();
-                    try openGame(game);
-                    return;
-                }
-            }
-
-            std.Thread.sleep(200 * std.time.ns_per_ms);
-        }
-    }
+    while (!game.server.?.game_data.map.finished_generating.load(.monotonic)) : (std.Thread.sleep(200 * std.time.ns_per_ms)) {}
+    try openGameLocal(game);
 }

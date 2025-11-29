@@ -38,8 +38,8 @@ A key architectural feature is the asynchronous server launch. When a user choos
 
 -   Contains the primary gameplay loop.
 -   Manages the rendering pipeline, which uses Raylib and custom GLSL shaders for lighting.
--   Handles client-side processing of world data, such as generating 3D models from the height map received from the server.
--   Displays a loading screen while waiting for world data.
+-   Handles client-side processing of map data, such as generating 3D models from the height map received from the server.
+-   Displays a loading screen while waiting for map data.
 
 ## Networking ([src/socket_packet.zig`, `src/client/Client.zig`, `src/server/Server.zig](/src/socket_packet.zig`, `src/client/Client.zig`, `src/server/Server.zig))
 
@@ -56,7 +56,7 @@ The networking layer is a fundamental part of the application, enabling multipla
 This file defines the structure of all network messages. Key message types include:
 
 -   `ClientConnect`: Sent by a client to join the server, containing the player's nickname.
--   `WorldDataChunk`: Sent by the server to a client, containing a piece of the world's height map. The world data is split into chunks to avoid sending a single large message.
+-   `WorldDataChunk`: Sent by the server to a client, containing a piece of the world's height map. The map data is split into chunks to avoid sending a single large message.
 -   `Player`: Sent by the server to update clients on the state of a player (e.g., position).
 -   `MovePlayer`: Sent by a client to inform the server of its new position.
 -   `ServerFull`: Sent by the server if a client attempts to connect when the server is at maximum capacity.
@@ -67,7 +67,7 @@ This file defines the structure of all network messages. Key message types inclu
 -   For each connected client, the server spawns two threads:
     -   One for receiving messages (`handleClientReceive`).
     -   One for sending game state updates (`handleClientSend`).
--   When a new client connects, the server adds them to the game and begins sending the world data in chunks.
+-   When a new client connects, the server adds them to the game and begins sending the map data in chunks.
 -   The server periodically broadcasts the state of all players to all clients to maintain synchronization.
 -   It processes incoming messages from clients, such as player movement updates, and updates the canonical game state.
 
@@ -84,7 +84,7 @@ This file defines the structure of all network messages. Key message types inclu
 ## Game Data and World Generation
 
 -   **Server-Side:** The server is responsible for generating and owning the game world. The world's terrain is created using a Perlin noise algorithm to generate a height map ([src/server/Perlin.zig](/src/server/Perlin.zig)).
--   **Client-Side:** The client receives the world data from the server and uses it to generate a 3D mesh for rendering.
+-   **Client-Side:** The client receives the map data from the server and uses it to generate a 3D mesh for rendering.
 
 ## Summary of Application Flow
 
@@ -95,7 +95,7 @@ This file defines the structure of all network messages. Key message types inclu
     -   If joining, the client connects to a remote server address.
 4.  **Gameplay Loop:**
     -   The server manages the authoritative game state.
-    -   Clients receive world data and render the 3D environment.
+    -   Clients receive map data and render the 3D environment.
     -   Clients send their movement updates to the server.
     -   The server broadcasts player state updates to all clients, ensuring a synchronized experience.
     -   Rendering is performed by Raylib, enhanced with custom GLSL shaders for lighting effects.

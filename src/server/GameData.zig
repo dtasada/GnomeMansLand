@@ -9,27 +9,26 @@ const ServerSettings = commons.ServerSettings;
 
 const Self = @This();
 
-world_data: *WorldData,
+map: *Map,
 players: std.ArrayList(Player),
 server_settings: ServerSettings,
 
-/// Returns with an empty arraylist of players, and a WorldData pointer.
+/// Returns with an empty arraylist of players, and a Map pointer.
 pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !Self {
     var players = try std.ArrayList(Player).initCapacity(alloc, settings.max_players);
     errdefer players.deinit(alloc);
 
     return .{
         .players = players,
-        .world_data = try WorldData.init(alloc, settings),
+        .map = try Map.init(alloc, settings),
         .server_settings = settings,
     };
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
-    self.world_data.deinit(alloc);
+    self.map.deinit(alloc);
 
-    for (self.players.items) |p|
-        alloc.free(p.nickname);
+    for (self.players.items) |p| p.deinit(alloc);
 
     self.players.deinit(alloc);
 }
@@ -46,9 +45,13 @@ pub const Player = struct {
             .position = null,
         };
     }
+
+    pub fn deinit(self: *const Player, alloc: std.mem.Allocator) void {
+        alloc.free(self.nickname);
+    }
 };
 
-pub const WorldData = struct {
+pub const Map = struct {
     size: commons.v2u,
     height_map: []f32, // 2d in practice
     finished_generating: std.atomic.Value(bool) = .init(false),
@@ -58,9 +61,9 @@ pub const WorldData = struct {
     terrain_gen_thread: ?std.Thread = null,
 
     /// starts genTerrainData thread.
-    pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*WorldData {
+    pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Map {
         const x, const y = settings.world_generation.resolution;
-        const self = try alloc.create(WorldData);
+        const self = try alloc.create(Map);
         errdefer alloc.destroy(self);
         self.* = .{
             .size = .{ .x = x, .y = y },
@@ -73,14 +76,14 @@ pub const WorldData = struct {
         return self;
     }
 
-    pub fn deinit(self: *const WorldData, alloc: std.mem.Allocator) void {
+    pub fn deinit(self: *const Map, alloc: std.mem.Allocator) void {
         if (self.terrain_gen_thread) |t| t.join();
         alloc.free(self.height_map);
         alloc.destroy(self);
     }
 
-    /// Asynchronously populates `world_data.height_map`
-    fn genTerrainData(self: *WorldData, alloc: std.mem.Allocator, settings: ServerSettings) !void {
+    /// Asynchronously populates `map.height_map`
+    fn genTerrainData(self: *Map, alloc: std.mem.Allocator, settings: ServerSettings) !void {
         const seed: u32 = settings.world_generation.seed orelse rand: {
             var seed: u32 = undefined;
             try std.posix.getrandom(std.mem.asBytes(&seed));
@@ -109,7 +112,7 @@ pub const WorldData = struct {
     }
 
     fn genTerrainDataLoop(
-        self: *WorldData,
+        self: *Map,
         mutex: *std.Thread.Mutex,
         settings: *const ServerSettings,
         pn: *const Perlin,

@@ -8,7 +8,7 @@ const ServerGameData = @import("server").GameData;
 /// Identifies the different types of messages that can be sent and received.
 pub const Descriptor = enum {
     player_state,
-    world_data_chunk,
+    map_chunk,
     server_full,
     client_connect,
     move_player,
@@ -26,7 +26,7 @@ pub const ClientConnect = struct {
 };
 
 /// Object representing a world terrain chunk.
-pub const WorldDataChunk = struct {
+pub const MapChunk = struct {
     /// Constant: max length in bytes of a chunk.
     const MAX_SIZE_BYTES: usize = 1024;
     /// Constant: the length in bytes of a floating point number in JSON.
@@ -38,7 +38,7 @@ pub const WorldDataChunk = struct {
     /// Constant: amount of floating point values that can fit in a chunk.
     pub const FLOATS_PER_CHUNK = @divFloor(AVAILABLE_BYTES_FOR_DATA, JSON_FLOAT_SIZE);
 
-    descriptor: Descriptor = .world_data_chunk,
+    descriptor: Descriptor = .map_chunk,
     /// identifies the index of the chunk.
     chunk_index: u32,
     /// identifies the index of the first float in the chunk relative to the full height map.
@@ -50,34 +50,34 @@ pub const WorldDataChunk = struct {
     /// actual floating point numbers of the chunk to be written into the JSON chunk.
     height_map: []f32, // 2d in practice
 
-    /// Asynchronoulsy populates `world_data_chunks`
+    /// Asynchronoulsy populates `map_chunks`
     pub fn init(
         alloc: std.mem.Allocator,
-        server_world_data: *ServerGameData.WorldData,
-        world_data_chunks: []WorldDataChunk,
+        server_map: *ServerGameData.Map,
+        map_chunks: []MapChunk,
     ) !std.Thread {
         return try std.Thread.spawn(.{}, genChunks, .{
             alloc,
-            world_data_chunks,
-            server_world_data,
+            map_chunks,
+            server_map,
         });
     }
 
-    /// blocking. populates `world_data_chunks` in parallel.
+    /// blocking. populates `map_chunks` in parallel.
     fn genChunks(
         alloc: std.mem.Allocator,
-        world_data_chunks: []WorldDataChunk,
-        server_world_data: *ServerGameData.WorldData,
+        map_chunks: []MapChunk,
+        server_map: *ServerGameData.Map,
     ) !void {
         var pool: std.Thread.Pool = undefined;
         try pool.init(.{ .allocator = alloc });
         defer pool.deinit();
 
         var wg: std.Thread.WaitGroup = .{};
-        for (0..world_data_chunks.len) |i| {
+        for (0..map_chunks.len) |i| {
             pool.spawnWg(&wg, genChunk, .{
-                world_data_chunks,
-                server_world_data,
+                map_chunks,
+                server_map,
                 i,
             });
         }
@@ -86,25 +86,21 @@ pub const WorldDataChunk = struct {
     }
 
     /// Generates a single chunk of index `i`.
-    fn genChunk(
-        chunks: []WorldDataChunk,
-        server_world_data: *ServerGameData.WorldData,
-        i: usize,
-    ) void {
+    fn genChunk(chunks: []MapChunk, server_map: *ServerGameData.Map, i: usize) void {
         const start_idx = i * FLOATS_PER_CHUNK;
-        const end_idx = @min(start_idx + FLOATS_PER_CHUNK, server_world_data.height_map.len);
+        const end_idx = @min(start_idx + FLOATS_PER_CHUNK, server_map.height_map.len);
 
         chunks[i] = .{
             .chunk_index = @intCast(i),
             .float_start_index = @intCast(start_idx),
             .float_end_index = @intCast(end_idx),
-            .total_size = server_world_data.size,
-            .height_map = server_world_data.height_map[start_idx..end_idx],
+            .total_size = server_map.size,
+            .height_map = server_map.height_map[start_idx..end_idx],
         };
 
-        _ = server_world_data.network_chunks_generated.fetchAdd(1, .monotonic);
-        if (server_world_data.network_chunks_generated.load(.monotonic) == chunks.len)
-            server_world_data.network_chunks_ready.store(true, .monotonic);
+        _ = server_map.network_chunks_generated.fetchAdd(1, .monotonic);
+        if (server_map.network_chunks_generated.load(.monotonic) == chunks.len)
+            server_map.network_chunks_ready.store(true, .monotonic);
     }
 };
 
