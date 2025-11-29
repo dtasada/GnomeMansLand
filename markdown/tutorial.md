@@ -1,4 +1,4 @@
-# Getting Started with Gnome Man's Land (for Python/JS Devs)
+# Getting Started with Zig and Gnome Man's Land
 
 Welcome to the project! This guide is for you, an experienced game developer coming from a background in dynamic languages like Python and JavaScript. Your experience with Pygame and Raylib is a huge asset, as the core game loop and rendering concepts will be very familiar.
 
@@ -49,7 +49,7 @@ This is the most important concept to grasp. In Python and JS, a garbage collect
         // Allocate memory for a list
         var list = std.ArrayList(u8).init(alloc);
         defer list.deinit(); // This will run at the end of the function, freeing the list's memory.
-        // or `errdefer list.deinit()`. this will only happen if the function returns an error.
+        // or `errdefer list.deinit()`. this will only happen if the function returns an error. note that in this example you wouldn't want that because you wanna clean up the memory no matter what.
         // ... do stuff with the list ...
     }
     ```
@@ -135,7 +135,7 @@ var my_optional: ?i32 = null;
 Prefixing a `?` before a type creates an optional type. Just like `try` and `catch`, there's syntactic shorthands for dealing with optionals.
 ```zig
 if (my_optional) |value| { 
-    // extracts inner value from optional. since `my_optional` is an error union, it can't be used on its own.
+    // extracts inner value from optional. since `my_optional` is an optional, it can't be used directly just by name
     // the inner value must be extracted first.
 }
 const assert_value: i32 = my_optional.?; // the `.?` operator asserts that `my_optional` is not null, but will crash the program at runtime if it is.
@@ -232,7 +232,7 @@ Number arithmetic can only be used with numbers of the same type. that means we 
 ### 8. Tuples and anytype
 For the purposes of safety and explicitness, Zig doesn't have variadic types (that's when a function takes any number of arguments, this is usually expressed with `...`, or `*` in python). Instead, a function that requires an arbitrary number of values will always take in one argument. For example, the default debug printing function, `std.debug.print` takes exactly two arguments: the format string, and a tuple, which will be empty if you don't need any variables, or contain any amount of elements if you do. To print some string, you'll have to write `std.debug.print("some string\n", .{})`. Notice the `.{}`: this is the empty tuple.
 
-#### 3. `comptime` - The Compiler is Your Friend
+### 9. `comptime` - The Compiler is Your Friend
 
 Zig can run code at compile-time. This is used for things like metaprogramming, validating types, and setting up data structures without any runtime cost. You'll see the `comptime` keyword used to make the code more efficient and flexible.
 
