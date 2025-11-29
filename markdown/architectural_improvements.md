@@ -6,15 +6,15 @@ Here are the main recommendations to make your project feel more like a real eng
 
 ### 1. Decouple Game Logic from Rendering
 
-*   **Problem:** The core game logic in `src/client/state/InGame.zig` is tightly coupled with low-level rendering calls to Raylib. The `update` function handles both game state changes and drawing, which makes it difficult to manage and extend.
+*   **Problem:** The core game logic in [src/client/state/InGame.zig](src/client/state/InGame.zig) is tightly coupled with low-level rendering calls to Raylib. The `update` function handles both game state changes and drawing, which makes it difficult to manage and extend.
 *   **Recommendation:** Introduce a dedicated **Renderer System**.
     *   The `InGame` state should not perform any drawing itself. Instead, its `update` function should focus only on updating the game world's state (e.g., player positions, animations).
     *   After updating, the game state should submit a list of "renderables" (data about what to draw, like models, positions, and textures) to the new Renderer.
-    *   The main game loop in `src/client/game/Game.zig` should be split into two distinct phases: `state.update()` and `renderer.draw()`. This creates a clean separation between "thinking" and "drawing."
+    *   The main game loop in [src/client/game/Game.zig](/src/client/game/Game.zig) should be split into two distinct phases: `state.update()` and `renderer.draw()`. This creates a clean separation between "thinking" and "drawing."
 
 ### 2. Fundamentally Redesign the Server Architecture
 
-*   **Problem:** The current server in `src/server/Server.zig` has critical architectural flaws. It spawns two threads for every client and modifies shared game data directly from these threads without any form of locking. This will inevitably lead to **race conditions**, causing data corruption and crashes. This model is also not scalable for many players. **Recommendation:**
+*   **Problem:** The current server in [src/server/Server.zig](/src/server/Server.zig) has critical architectural flaws. It spawns two threads for every client and modifies shared game data directly from these threads without any form of locking. This will inevitably lead to **race conditions**, causing data corruption and crashes. This model is also not scalable for many players. **Recommendation:**
     *   **Immediate Fix:** Add a `std.Thread.Mutex` to protect all read and write access to the shared `GameData`. This is a short-term solution to prevent crashes.
     *   **Long-Term Solution:** Transition from a thread-per-client model to a modern, **event-driven architecture**. Use an I/O multiplexer (like `epoll` on Linux, `kqueue` on macOS, or `iocp` on Windows) to handle many client connections on a small number of threads. Network events would be processed and handed off to a pool of worker threads to execute game logic. This is a significant change but is essential for a scalable and professional-grade engine.
 
@@ -30,8 +30,8 @@ Here are the main recommendations to make your project feel more like a real eng
 ### 4. Improve Separation of Concerns
 
 *   **Problem:** Several modules have responsibilities that don't belong to them, violating the Single Responsibility Principle.
-    *   `src/client/state/State.zig`: The state manager is currently responsible for creating the server and client instances, which should be handled by a higher-level application object.
-    *   `src/server/GameData.zig`: This data-oriented struct also contains the complex terrain generation algorithm.
+    *   [src/client/state/State.zig](/src/client/state/State.zig): The state manager is currently responsible for creating the server and client instances, which should be handled by a higher-level application object.
+    *   [src/server/GameData.zig](/src/server/GameData.zig): This data-oriented struct also contains the complex terrain generation algorithm.
 *   **Recommendation:** Refactor to improve modularity.
-    *   The main `Game` object in `src/client/game/Game.zig` should be responsible for orchestrating the creation and teardown of the client and server.
-    *   Extract the terrain generation logic from `GameData.zig` into its own `TerrainGenerator` module. This makes the logic reusable and keeps your data structures clean.
+    *   The main `Game` object in [src/client/game/Game.zig](/src/client/game/Game.zig) should be responsible for orchestrating the creation and teardown of the client and server.
+    *   Extract the terrain generation logic from [src/client/game/GameData.zig](/src/client/game/GameData.zig) into its own `TerrainGenerator` module. This makes the logic reusable and keeps your data structures clean.

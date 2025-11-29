@@ -240,31 +240,30 @@ Zig can run code at compile-time. This is used for things like metaprogramming, 
 
 Now, let's look at the codebase. We've tried to structure it like a simple game engine.
 
--   **`build.zig`**: This is the "entry point" for the compiler. It tells Zig how to build the project, what the dependencies are (like Raylib), and which files to include.
--   **`src/main.zig`**: The actual entry point for the *program*. It's very simple: it just initializes the main `Game` object and starts the game loop.
--   **`src/client/game/Game.zig`**: This is the heart of the client application. It owns the main `state` machine. The `loop()` function here is the main game loop.
--   **`src/client/state/State.zig`**: This file defines the game's state machine. A "state" is basically a screen, like the main menu (`Lobby.zig`), the settings screen, or the game itself (`InGame.zig`). The state machine controls which state is currently active and being updated/drawn.
--   **`src/server/Server.zig` & `src/client/Client.zig`**: These handle all the networking. The server manages the game world and player data, while the client sends input and receives updates.
+-   [build.zig](/build.zig): This is the "entry point" for the compiler. It tells Zig how to build the project, what the dependencies are (like Raylib), and which files to include.
+-   [src/main.zig](/src/main.zig): The actual entry point for the *program*. It's very simple: it just initializes the main `Game` object and starts the game loop.
+-   [src/client/game/Game.zig](/src/client/game/Game.zig): This is the heart of the client application. It owns the main `state` machine. The `loop()` function here is the main game loop.
+-   [src/client/state/State.zig](/src/client/state/State.zig): This file defines the game's state machine. A "state" is basically a screen, like the main menu (`Lobby.zig`), the settings screen, or the game itself (`InGame.zig`). The state machine controls which state is currently active and being updated/drawn.
+-   [src/server/Server.zig](/src/server/Server.zig) & [src/client/Client.zig](src/client/Client.zig): These handle all the networking. The server manages the game world and player data, while the client sends input and receives updates.
 
 ## Where to Start Making Changes
 
 Here are some common tasks and where to look in the code to implement them.
 
 -   **"I want to change the main menu..."**
-    -   Look at **`src/client/state/Lobby.zig`**. This file controls the logic and UI for the main menu. The UI elements are drawn using functions from `src/client/state/ui.zig`.
+    -   Look at [src/client/state/Lobby.zig](/src/client/state/Lobby.zig). This file controls the logic and UI for the main menu. The UI elements are drawn using functions from [src/client/state/ui.zig](/src/client/state/ui.zig).
 
 -   **"I want to change how the player moves..."**
-    -   Player input is handled in **`src/client/game/input.zig`**. The `handleKeys` function is where keyboard input is translated into actions.
-    -   These actions (like moving) are sent to the server. The server processes the movement in **`src/server/Server.zig`** in the `processMessage` function, specifically for the `.move_player` descriptor.
+    -   Player input is handled in [src/client/game/input.zig](/src/client/game/input.zig). The `handleKeys` function is where keyboard input is translated into actions.
+    -   These actions (like moving) are sent to the server. The server processes the movement in [src/server/Server.zig](/src/server/Server.zig) in the `processMessage` function, specifically for the `.move_player` descriptor.
 
 -   **"I want to add a new enemy or object..."**
     -   This is a great place to start! Currently, the project doesn't have a generic "GameObject" or "Entity" system (this is a planned architectural improvement).
-    -   To see how players are handled, look at `src/server/GameData.zig` where the `Player` struct is defined. The server updates a list of these players.
-    -   The client receives this player data and draws them in what will soon be `src/client/game/Renderer.zig`. You would follow a similar pattern to add a new object type.
+    -   To see how players are handled, look at [src/server/GameData.zig](/src/server/GameData.zig) where the `Player` struct is defined. The server updates a list of these players.
 
 -   **"I want to change how the world looks or is generated..."**
-    -   The 3D rendering happens in **`src/client/state/InGame.zig`**. This is where the 3D models are drawn.
-    -   The shaders are in `resources/shaders/`.
-    -   The world *generation* happens on the server side, in **`src/server/Perlin.zig`**, which uses Perlin noise to create the height map.
+    -   The 3D rendering happens in [src/client/state/InGame.zig](/src/client/state/InGame.zig). This is where the 3D models are drawn.
+    -   The shaders are in [resources/shaders](/resources/shaders).
+    -   The world *generation* happens on the server side, in [src/server/Perlin.zig](/src/server/Perlin.zig), which uses Perlin noise to create the height map.
 
 Don't be afraid to experiment and break things. The compiler is very helpful and will often tell you exactly what's wrong. Welcome aboard!
