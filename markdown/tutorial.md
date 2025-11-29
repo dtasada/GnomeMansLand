@@ -4,7 +4,7 @@ Welcome to the project! This guide is for you, an experienced game developer com
 
 The biggest hurdle will be learning Zig, but the good news is that Zig is designed to be a simple and readable language. Let's dive in.
 
-## A Crash Course in Zig for a Python/JS Developer
+## A Crash Course in Zig for a high-level developer
 
 Zig is a statically-typed, compiled language. This is the biggest difference from Python or JavaScript, which are dynamically-typed and interpreted.
 
@@ -21,7 +21,7 @@ Zig is a statically-typed, compiled language. This is the biggest difference fro
     var x: i32 = undefined;
     ```
     An undefined variable must include an explicit type, otherwise the compiler doesn't know what type it is.
-    An undefined variable has no initialized value and just contains whatever garbage data happened to be in memory.
+    An undefined variable has no initialized value and just contains whatever garbage data happened to be in memory. This is undefined behavior and should be avoided where possible. Sometimes it is necessary though, you'll see this throughout the codebase.
 
 -   **Compilation:** You don't just run the `.zig` file. You compile the entire project into a single executable file. The command for this project is simple:
 
@@ -46,9 +46,10 @@ This is the most important concept to grasp. In Python and JS, a garbage collect
 
     ```zig
     fn doSomething(alloc: std.mem.Allocator) !void {
-        // Allocate memory for a list
-        var list = std.ArrayList(u8).init(alloc);
-        defer list.deinit(); // This will run at the end of the function, freeing the list's memory.
+        var list: std.ArrayList(u8) = .{}; // initializes an empty arraylist
+        // or for example `std.ArrayList(u8).initCapacity(alloc, 64);` will preallocate space for 64 integers.
+        try list.append(alloc, 69);
+        defer list.deinit(alloc); // This will run at the end of the function, freeing the list's memory.
         // or `errdefer list.deinit()`. this will only happen if the function returns an error. note that in this example you wouldn't want that because you wanna clean up the memory no matter what.
         // ... do stuff with the list ...
     }
@@ -66,10 +67,11 @@ const MyStruct = struct {
     // this is a method. since it doesn't take a `self`, it can be called using `MyStruct` as a namespace, rather than an object.
     pub fn init() MyStruct {
         return .{ .ids = .{} }; // returns an object with an empty arraylist.
+        // the .{} syntax is valid because Zig already knows what type `init` should return. If the type wasn't known you'd maybe use `MyStruct{}` instead.
     }
 
     pub fn addId(self: *MyStruct, allocator: std.mem.Allocator, id: u32) !void {
-        // important convention: the allocator should be the first parameter in the function
+        // important convention: the allocator should be the first parameter in the function (excluding the `self` parameter)
         try self.ids.append(allocator, id);
     }
 
@@ -86,8 +88,9 @@ pub fn main() !void {
 
     try my_object.addId(allocator, 42);
 }
-
 ```
+
+This practice of passing allocators is useful because that means that allocators are modular. If you want a different memory allocator for whatever reason, you can change the allocator you pass to the function. Examples are `DebugAllocator`, `WasmAllocator`, `FixedBufferAllocator`, and `ThreadSafeAllocator`.
 
 ### 2. Explicit Error Handling
 
@@ -128,7 +131,7 @@ The `try` keyword is a syntactic shorthand for `catch |err| return err`. This ju
 
 ### 3. Optionals
 
-In Zig, there's another kind of built-in union type: the optional. You an optional, or nullable type denotes that a variable may also be `null`, along with its normal type.
+In Zig, there's another kind of built-in union type: the optional. An optional, or nullable type denotes that a variable may also be `null`, along with its normal type.
 ```zig
 var my_optional: ?i32 = null;
 ```
@@ -137,6 +140,7 @@ Prefixing a `?` before a type creates an optional type. Just like `try` and `cat
 if (my_optional) |value| { 
     // extracts inner value from optional. since `my_optional` is an optional, it can't be used directly just by name
     // the inner value must be extracted first.
+    // now, `value` is of type `i32`. Since this is an if statement, this block only executes if `my_optional != null`.
 }
 const assert_value: i32 = my_optional.?; // the `.?` operator asserts that `my_optional` is not null, but will crash the program at runtime if it is.
 const default_value: i32 = my_optional orelse 69; // the `orelse` operator works only on optional values and returns either the inner value of an optional, or a default value if the optional equals `null`. It behaves kind of like the `catch` operator.
@@ -160,7 +164,7 @@ fn constant(value: *const i32) void {
 
 fn safeNullable(value: ?*i32) void {
     if (value) |inner| {
-        std.debug.print("argument has a value! {}\n", .{inner});
+        std.debug.print("argument has a value! {}\n", .{inner.*});
     } else {
         std.debug.print("argument is null :(", .{});
     }
@@ -185,10 +189,11 @@ const anotherValue = switch (myEnum) {
 
 // block expression
 const blockValue = b: {
-    // in zig, you can label blocks to make them behave as expression.
+    // in zig, you can label blocks to make them behave as expressions.
     // the label `b` is arbitrary but `b` or `blk` are conventional.
 
     // do any arbitrary processing
+    const my_result = ...;
 
     // now i can `break` using the label name, along with a value, and the block `b` will evaluate to whatever value was broken with.
     break :b my_result; // basically returns the block with `my_result`

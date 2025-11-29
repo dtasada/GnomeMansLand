@@ -355,8 +355,13 @@ fn listen(self: *Self) !void {
 
 /// Appends a player to
 fn appendPlayer(self: *Self, connect_request: socket_packet.ClientConnect) !void {
+    // we duplicate the nickname because `connect_request` gets cleaned up after appendPlayer is called
+    // so we prevent use after free
+    const nickname_dupe = try self.alloc.dupe(u8, connect_request.nickname);
+    errdefer self.alloc.free(nickname_dupe);
+
     try self.game_data.players.appendBounded(GameData.Player.init(
         @intCast(self.game_data.players.items.len),
-        try self.alloc.dupe(u8, connect_request.nickname), // duplicate nickname bc threads
+        nickname_dupe,
     ));
 }
