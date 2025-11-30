@@ -35,45 +35,49 @@ pub fn init(
     var self = try alloc.create(Self);
     errdefer alloc.destroy(self);
 
-    self.alloc = alloc;
-    self.wait_list = .{};
-
     try network.init();
     errdefer network.deinit();
 
-    self.sock = network.connectToHost(
-        self.alloc,
-        settings.multiplayer.server_host,
-        settings.multiplayer.server_port,
-        .tcp,
-    ) catch |err| return commons.printErr(
-        err,
-        "Couldn't connect to host server at ({s}:{}): {}\n",
-        .{ settings.multiplayer.server_host, settings.multiplayer.server_port, err },
-        .red,
-    );
+    self.* = .{
+        .alloc = alloc,
+        .wait_list = .{},
+        .sock = network.connectToHost(
+            self.alloc,
+            settings.multiplayer.server_host,
+            settings.multiplayer.server_port,
+            .tcp,
+        ) catch |err| return commons.printErr(
+            err,
+            "Couldn't connect to host server at ({s}:{}): {}\n",
+            .{ settings.multiplayer.server_host, settings.multiplayer.server_port, err },
+            .red,
+        ),
+        .listen_thread = undefined,
+        .running = .init(true),
+        .polling_rate = settings.multiplayer.polling_rate,
+        .game_data = undefined,
+    };
 
-    self.running = std.atomic.Value(bool).init(true);
     errdefer self.running.store(false, .monotonic);
 
     self.listen_thread = try std.Thread.spawn(.{}, Self.listen, .{self});
-    self.polling_rate = settings.multiplayer.polling_rate;
 
     self.game_data = try GameData.init(
         self.alloc,
-        if (server_map) |s|
-            .{ .yes = s }
-        else
-            .{
-                .no = (try self.sendAndReceive(
-                    connect_message,
-                    socket_packet.ServerAcceptedClient,
-                    &self.wait_list.client_accepted,
-                )).map_size,
-            },
+        if (server_map) |s| b: {
+            try self.send(connect_message);
+            break :b .{ .yes = s };
+        } else b: {
+            const accept = try self.sendAndReceive(
+                connect_message,
+                socket_packet.ServerAcceptedClient,
+                &self.wait_list.client_accepted,
+            );
+            break :b .{ .no = accept.map_size };
+        },
     );
-
     errdefer self.game_data.deinit(self.alloc);
+
     try self.sock.setReadTimeout(500 * 1000); // set 500 ms timeout for thread join
 
     return self;

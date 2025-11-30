@@ -19,28 +19,28 @@ gpa: std.heap.DebugAllocator(.{}),
 tsa: std.heap.ThreadSafeAllocator,
 alloc: std.mem.Allocator,
 
-//// The network socket itself.
-sock: network.Socket,
+/// Contains internal configuration.
+settings: ServerSettings,
 
 /// Arraylist of pointers to all the client objects.
 clients: std.ArrayList(*Client),
 
-/// Thread that runs `listen`
-listen_thread: std.Thread,
-
-/// Atomic boolean identifying whether the server is running or not.
-running: std.atomic.Value(bool),
-
 /// Contains internal server game data.
 game_data: GameData,
-
-/// Contains internal configuration.
-settings: ServerSettings,
 
 /// Contains cached data to be sent to clients.
 socket_packets: struct {
     map_chunks: []socket_packet.MapChunk,
 },
+
+//// The network socket itself.
+sock: network.Socket,
+
+/// Atomic boolean identifying whether the server is running or not.
+running: std.atomic.Value(bool),
+
+/// Thread that runs `listen`
+listen_thread: std.Thread,
 
 /// Wrapper around a single client construct.
 const Client = struct {
@@ -166,6 +166,11 @@ fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) 
 
             self.appendPlayer(client_connect) catch |err| switch (err) {
                 error.ServerFull => {
+                    commons.print(
+                        "Client attempted to join from {f}, but the server is full ({}/{})!",
+                        .{ try client.sock.getRemoteEndPoint(), self.game_data.players.items.len, self.game_data.players.capacity },
+                        .yellow,
+                    );
                     try client.send(self.alloc, socket_packet.ServerFull{});
                     return;
                 },
@@ -255,7 +260,7 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     self.sock.bindToPort(self.settings.port) catch |err|
         return commons.printErr(
             err,
-            "Error initializing server: Couldn't bind to port {}. ({})",
+            "Error initializing server: Couldn't bind to port {}. ({})\n",
             .{ self.settings.port, err },
             .red,
         );
@@ -297,6 +302,8 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
 
 /// Listens for new clients and appends them to `self.clients`
 fn listen(self: *Self) !void {
+    try self.sock.listen();
+
     while (self.running.load(.monotonic)) {
         const sock = self.sock.accept() catch |err| switch (err) {
             error.WouldBlock, error.ConnectionAborted => continue,
@@ -321,7 +328,7 @@ fn listen(self: *Self) !void {
 
         try self.clients.append(self.alloc, client);
 
-        commons.print("Client connected from {f}.\n", .{try client.sock.getLocalEndPoint()}, .blue);
+        commons.print("Client connected from {f}.\n", .{try client.sock.getRemoteEndPoint()}, .blue);
     }
 }
 
