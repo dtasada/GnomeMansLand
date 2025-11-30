@@ -84,32 +84,22 @@ pub fn serverSetup(self: *Self) void {
     self.type = .server_setup;
 }
 
-/// Creates client and opens game normally.
-pub fn openGameRemote(self: *Self, game: *Game) !void {
-    if (self.lobby.nickname_input.len != 0) { // only if nickname isn't empty
-        try game.reinitClient(self.lobby.nickname_input.getBody());
-        self.type = .game;
-    } else @panic("unimplemented");
-}
-
-/// Creates client and opens game, copying map data directly from local server
-pub fn openGameLocal(self: *Self, game: *Game) !void {
-    if (self.lobby.nickname_input.len != 0) { // only if nickname isn't empty
-        try game.reinitClient(self.lobby.nickname_input.getBody());
-
-        // Perform the memory copy
-        game.client.?.game_data.map = try Game.GameData.Map.initFromExisting(
-            game.alloc,
-            game.server.?.game_data.map,
+/// Creates client and opens game.
+/// If a server exists locally, the game data map will point to the server map.
+/// Else, the client expects to receive a map payload from a remote server.
+pub fn openGame(self: *Self, game: *Game) !void {
+    if (self.lobby.nickname_input.len != 0) {
+        try game.initClient(
+            self.lobby.nickname_input.getBody(),
+            if (game.server) |s| s.game_data.map else null,
         );
-
         self.type = .game;
     } else @panic("unimplemented");
 }
 
 /// (Re)initializes server. Starts a thread for `waitForServer`
 pub fn hostServer(self: *Self, game: *Game) !void {
-    try game.reinitServer();
+    try game.initServer();
 
     const t = try std.Thread.spawn(.{}, waitForServer, .{ self, game });
     t.detach();
@@ -118,5 +108,5 @@ pub fn hostServer(self: *Self, game: *Game) !void {
 /// Waits for server to finish generating world, then opens the game locally.
 fn waitForServer(self: *Self, game: *Game) !void {
     while (!game.server.?.game_data.map.finished_generating.load(.monotonic)) : (std.Thread.sleep(200 * std.time.ns_per_ms)) {}
-    try self.openGameLocal(game);
+    try self.openGame(game);
 }

@@ -169,14 +169,17 @@ pub fn loop(self: *Self) !void {
         try self.state.update(self);
 }
 
-pub fn reinitServer(self: *Self) !void {
+/// Initializes server. Deinits first if server already existed.
+pub fn initServer(self: *Self) !void {
     if (self.server) |s| s.deinit(self.alloc);
     self.server = try Server.init(self.alloc, self.settings.server);
 }
 
-pub fn reinitClient(self: *Self, nickname: []const u8) !void {
+/// Initializes client. Deinits first if client already existed.
+/// `is_host` determines if the client should own the map or not.
+pub fn initClient(self: *Self, nickname: []const u8, server_map: ?*Server.GameData.Map) !void {
     if (self.client) |client| client.deinit(self.alloc);
 
     const client_connect = socket_packet.ClientConnect.init(nickname);
-    self.client = try Client.init(self.alloc, self.settings, client_connect);
+    self.client = try Client.init(self.alloc, self.settings, client_connect, server_map);
 }

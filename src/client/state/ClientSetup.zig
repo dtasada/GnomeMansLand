@@ -58,7 +58,7 @@ pub fn update(self: *Self, game: *Game) !void {
     });
 
     self.button_set.update(.{
-        .{ State.openGameRemote, .{ &game.state, game } },
+        .{ State.openGame, .{ &game.state, game } },
         .{ State.openLobby, .{&game.state} },
     }) catch |err| switch (err) {
         error.CouldNotConnect => {

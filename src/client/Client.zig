@@ -7,6 +7,7 @@ const commons = @import("commons");
 const socket_packet = @import("socket_packet");
 const s2s = @import("s2s");
 
+const ServerMap = @import("server").GameData.Map;
 const GameData = @import("game").GameData;
 
 pub const Settings = @import("Settings.zig");
@@ -25,7 +26,12 @@ polling_rate: u64,
 
 const BYTE_LIMIT: usize = 65535;
 
-pub fn init(alloc: std.mem.Allocator, settings: Settings, connect_message: socket_packet.ClientConnect) !*Self {
+pub fn init(
+    alloc: std.mem.Allocator,
+    settings: Settings,
+    connect_message: socket_packet.ClientConnect,
+    server_map: ?*ServerMap,
+) !*Self {
     var self = try alloc.create(Self);
     errdefer alloc.destroy(self);
 
@@ -53,15 +59,21 @@ pub fn init(alloc: std.mem.Allocator, settings: Settings, connect_message: socke
     self.listen_thread = try std.Thread.spawn(.{}, Self.listen, .{self});
     self.polling_rate = settings.multiplayer.polling_rate;
 
-    const accepted = try self.sendAndReceive(
-        connect_message,
-        socket_packet.ServerAcceptedClient,
-        &self.wait_list.client_accepted,
+    self.game_data = try GameData.init(
+        self.alloc,
+        if (server_map) |s|
+            .{ .yes = s }
+        else
+            .{
+                .no = (try self.sendAndReceive(
+                    connect_message,
+                    socket_packet.ServerAcceptedClient,
+                    &self.wait_list.client_accepted,
+                )).map_size,
+            },
     );
 
-    self.game_data = try GameData.init(self.alloc, accepted.map_size);
     errdefer self.game_data.deinit(self.alloc);
-
     try self.sock.setReadTimeout(500 * 1000); // set 500 ms timeout for thread join
 
     return self;
@@ -82,7 +94,7 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
 
 /// Sends `message` to server, then waits until `wait` is not null. Then returns `wait` unwrapped. Blocking
 fn sendAndReceive(self: *Self, message: anytype, comptime T: type, wait: *?T) !T {
-    try self.serializeSend(message);
+    try self.send(message);
     while (wait.* == null) {}
     return wait.*.?;
 }
@@ -181,7 +193,7 @@ fn handleMessage(self: *Self, message_payload: []const u8) !void {
     }
 }
 
-pub fn serializeSend(self: *const Self, object: anytype) !void {
+pub fn send(self: *const Self, object: anytype) !void {
     var serialize_writer = std.Io.Writer.Allocating.init(self.alloc);
     defer serialize_writer.deinit();
     try s2s.serialize(&serialize_writer.writer, @TypeOf(object), object);

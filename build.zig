@@ -84,7 +84,7 @@ pub fn build(b: *std.Build) void {
     const state_mod = modules.create("state", "src/client/state/State.zig");
     const game_mod = modules.create("game", "src/client/game/Game.zig");
 
-    client_mod.addImports(&.{ commons_mod, game_mod, network_mod, s2s_mod, socket_packet_mod });
+    client_mod.addImports(&.{ commons_mod, game_mod, network_mod, s2s_mod, socket_packet_mod, server_mod });
     server_mod.addImports(&.{ commons_mod, network_mod, s2s_mod, socket_packet_mod });
     state_mod.addImports(&.{ client_mod, commons_mod, game_mod, raylib_mod, server_mod, socket_packet_mod });
     game_mod.addImports(&.{ client_mod, commons_mod, raygui_mod, raylib_mod, server_mod, socket_packet_mod, state_mod });

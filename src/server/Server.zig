@@ -59,25 +59,7 @@ const Client = struct {
     /// Atomic boolean identifying whether the client is running or not
     open: std.atomic.Value(bool),
 
-    /// Appends a newline sentinel to `message` and sends it to the client. Blocking
-    pub fn send(self: *const Client, alloc: std.mem.Allocator, message: []const u8) !void {
-        const message_newline = try std.fmt.allocPrint(alloc, "{s}\n", .{message});
-        defer alloc.free(message_newline);
-
-        while (true) {
-            _ = self.sock.send(message_newline) catch |err| switch (err) {
-                error.WouldBlock => {
-                    std.Thread.sleep(200 * std.time.ns_per_ms);
-                    continue;
-                },
-                error.ConnectionResetByPeer, error.BrokenPipe => break, // caller decides to stop
-                else => return err,
-            };
-            break;
-        }
-    }
-
-    pub fn serializeSend(self: *const Client, alloc: std.mem.Allocator, object: anytype) !void {
+    pub fn send(self: *const Client, alloc: std.mem.Allocator, object: anytype) !void {
         var serialize_writer = std.Io.Writer.Allocating.init(alloc);
         defer serialize_writer.deinit();
         try s2s.serialize(&serialize_writer.writer, @TypeOf(object), object);
@@ -160,7 +142,7 @@ fn handleClientSend(self: *const Self, client: *const Client) !void {
         // send necessary game info
         for (self.game_data.players.items) |p| {
             const player_packet = socket_packet.Player.init(p);
-            client.serializeSend(self.alloc, player_packet) catch |err| {
+            client.send(self.alloc, player_packet) catch |err| {
                 commons.print("Failed to flush to client writer: {}\n", .{err}, .yellow);
                 return;
             };
@@ -184,25 +166,26 @@ fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) 
 
             self.appendPlayer(client_connect) catch |err| switch (err) {
                 error.ServerFull => {
-                    try client.serializeSend(self.alloc, socket_packet.ServerFull{});
+                    try client.send(self.alloc, socket_packet.ServerFull{});
                     return;
                 },
                 else => return err,
             };
 
-            try client.serializeSend(self.alloc, socket_packet.ServerAcceptedClient.init(self.game_data.map.size));
+            try client.send(self.alloc, socket_packet.ServerAcceptedClient.init(self.game_data.map.size));
 
             // Send map data to the client
             while (!self.game_data.map.network_chunks_ready.load(.monotonic)) {}
             for (self.socket_packets.map_chunks) |c|
-                client.serializeSend(self.alloc, c) catch |err| {
+                client.send(self.alloc, c) catch |err| {
                     commons.print("Failed to flush to client writer: {}\n", .{err}, .yellow);
                     return;
                 };
         },
         .resend_request => @panic("unimplemented"),
         .client_requests_move_player => {
-            const move_player = try s2s.deserializeAlloc(&serializer_stream, socket_packet.MovePlayer, self.alloc);
+            var move_player = try s2s.deserializeAlloc(&serializer_stream, socket_packet.MovePlayer, self.alloc);
+            defer s2s.free(self.alloc, socket_packet.MovePlayer, &move_player);
             self.game_data.players.items[client.id].position = move_player.new_pos;
         },
         else => return commons.printErr(
@@ -328,11 +311,13 @@ fn listen(self: *Self) !void {
 
         client.* = .{
             .sock = sock,
-            .thread_handle_receive = try std.Thread.spawn(.{}, handleClientReceive, .{ self, client }),
-            .thread_handle_send = try std.Thread.spawn(.{}, handleClientSend, .{ self, client }),
+            .thread_handle_receive = undefined,
+            .thread_handle_send = undefined,
             .id = @intCast(self.clients.items.len),
             .open = .init(true),
         };
+        client.thread_handle_receive = try std.Thread.spawn(.{}, handleClientReceive, .{ self, client });
+        client.thread_handle_send = try std.Thread.spawn(.{}, handleClientSend, .{ self, client });
 
         try self.clients.append(self.alloc, client);
 

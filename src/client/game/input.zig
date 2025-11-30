@@ -45,7 +45,7 @@ pub fn handleKeys(in_game: *InGame, game: *Game) !void {
             if (game.client) |client| {
                 if (getMouseToWorld(in_game, game)) |pos| {
                     const move_player = socket_packet.MovePlayer.init(.init(pos.x, pos.z));
-                    try client.serializeSend(move_player);
+                    try client.send(move_player);
                 }
             }
         }
