@@ -162,7 +162,10 @@ fn handleClientSend(self: *const Self, client: *const Client) !void {
         // send necessary game info
         for (self.game_data.players.items) |p| {
             const player_packet = socket_packet.Player.init(p);
-            try client.serializeSend(self.alloc, player_packet);
+            client.serializeSend(self.alloc, player_packet) catch |err| {
+                commons.print("Failed to flush to client writer: {}\n", .{err}, .yellow);
+                return;
+            };
         }
 
         std.Thread.sleep(self.settings.polling_rate * std.time.ns_per_ms);
@@ -192,25 +195,28 @@ fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) 
             // Send map data to the client
             while (!self.game_data.map.network_chunks_ready.load(.monotonic)) {}
             for (self.socket_packets.map_chunks) |c|
-                try client.serializeSend(self.alloc, c);
+                client.serializeSend(self.alloc, c) catch |err| {
+                    commons.print("Failed to flush to client writer: {}\n", .{err}, .yellow);
+                    return;
+                };
         },
         .resend_request => @panic("unimplemented"),
         .move_player => {
             const move_player = try s2s.deserializeAlloc(&serializer_stream, socket_packet.MovePlayer, self.alloc);
             self.game_data.players.items[client.id].position = move_player.new_pos;
         },
-        else => {
-            commons.print("Illegal message received from client. Has descriptor {s}.\n", .{@tagName(descriptor)}, .yellow);
-            return error.IllegalMessage;
-        },
+        else => return commons.printErr(
+            error.IllegalMessage,
+            "Illegal message received from client. Has descriptor {s}.\n",
+            .{@tagName(descriptor)},
+            .yellow,
+        ),
     }
 }
 
 fn prepareMapChunks(self: *Self) !void {
     // Wait for the main map to finish generating
-    while (!self.game_data.map.finished_generating.load(.monotonic)) {
-        std.Thread.sleep(100 * std.time.ns_per_ms);
-    }
+    while (!self.game_data.map.finished_generating.load(.monotonic)) : (std.Thread.sleep(100 * std.time.ns_per_ms)) {}
 
     // Now that the map is ready, generate the network chunks from it.
     const chunk_gen_thread = try socket_packet.MapChunk.init(
