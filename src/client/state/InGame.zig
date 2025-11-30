@@ -4,7 +4,6 @@ const rl = @import("raylib");
 
 const commons = @import("commons");
 const ui = @import("ui.zig");
-const socket_packet = @import("socket_packet");
 const rcamera = Game.rcamera;
 const input = Game.input;
 

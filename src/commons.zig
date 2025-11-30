@@ -1,19 +1,6 @@
 //! Utility library for common (shared) functionality between different modules.
 
 const std = @import("std");
-const rl = @import("raylib");
-const s2s = @import("s2s");
-
-const socket_packet = @import("socket_packet");
-
-/// Returns null-terminated string from `text`.
-/// Caller must `@ptrCast()` to cast to a `[:0]const u8`.
-/// Caller owns memory.
-pub inline fn toSentinel(text: []const u8, buf: [:0]u8) void {
-    const n = @min(text.len, buf.len - 1);
-    @memcpy(buf[0..n], text[0..n]);
-    buf[n] = 0;
-}
 
 /// 2-dimensional vector type.
 pub fn v2(comptime T: type) type {
@@ -85,26 +72,3 @@ pub const ServerSettings = struct {
         amplitude: f32,
     },
 };
-
-/// Gets descriptor field from a JSON object and converts it to a `socket_packet.Descriptor`.
-/// `source` is either
-pub fn getDescriptor(
-    object: @FieldType(std.json.Value, "object"),
-    comptime source: enum { server, client },
-) !socket_packet.Descriptor {
-    const descriptor_obj = object.get("descriptor") orelse
-        return printErr(
-            error.InvalidMessage,
-            "Received message from " ++ @tagName(source) ++ " without a descriptor!",
-            .{},
-            .yellow,
-        );
-
-    return std.meta.stringToEnum(socket_packet.Descriptor, descriptor_obj.string) orelse
-        printErr(
-            error.InvalidMessage,
-            "Received message with invalid descriptor {s} from " ++ @tagName(source) ++ ".\n",
-            .{descriptor_obj.string},
-            .yellow,
-        );
-}

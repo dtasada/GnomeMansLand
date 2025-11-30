@@ -13,6 +13,10 @@
             .url = "https://github.com/MasterQ32/zig-network/archive/92cd82679d0fc065cbbdb6c446b9e561a75a44a6.tar.gz",
             .hash = "network-0.1.0-Pm-AgmUxAQD-rOaM_3wMkaxea1PBKda1Hn6F82Nw1F3u",
         },
+        .s2s = .{
+            .url = "https://github.com/ziglibs/s2s/archive/a51f347ae5e01ad634cf736e054cf348d90c4f04.tar.gz",
+            .hash = "s2s-0.0.1-qt8ajd57AAA--HKwcpRdTd5Gr2anqqceKchvLmkSTywh",
+        },
     },
     .paths = .{
         "build.zig",

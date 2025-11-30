@@ -1,6 +1,5 @@
 //! TCP server struct
 const std = @import("std");
-const builtin = @import("builtin");
 const network = @import("network");
 
 const socket_packet = @import("socket_packet");

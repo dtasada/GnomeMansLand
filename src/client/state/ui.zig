@@ -21,8 +21,18 @@ pub const TextVariable = Text_(true);
 pub var chalk_font: rl.Font = undefined;
 pub var gwathlyn_font: rl.Font = undefined;
 
+/// gets the right x of a rectangle.
 pub inline fn getRight(hitbox: rl.Rectangle) f32 {
     return hitbox.x + hitbox.width;
+}
+
+/// Returns null-terminated string from `text`.
+/// Caller must `@ptrCast()` to cast to a `[:0]const u8`.
+/// Caller owns memory.
+pub inline fn toSentinel(text: []const u8, buf: [:0]u8) void {
+    const n = @min(text.len, buf.len - 1);
+    @memcpy(buf[0..n], text[0..n]);
+    buf[n] = 0;
 }
 
 /// Button struct.
@@ -71,7 +81,7 @@ pub const Button = struct {
     }
 
     pub fn getHitbox(self: *Button) rl.Rectangle {
-        commons.toSentinel(self.text.body, &self.text_cstr);
+        toSentinel(self.text.body, &self.text_cstr);
 
         const text_dimensions = rl.measureTextEx(
             self.text.font,
@@ -229,7 +239,7 @@ fn Text_(M: bool) type {
 
         /// Returns hitbox for text.
         pub fn getHitbox(self: *Text_(M)) rl.Rectangle {
-            commons.toSentinel(self.body, &self.body_cstr);
+            toSentinel(self.body, &self.body_cstr);
 
             const dimensions = rl.measureTextEx(
                 self.font,
@@ -248,7 +258,7 @@ fn Text_(M: bool) type {
         /// Actually draws the text on the screen. buf is passed to allow drawing any buffer.
         /// Kinda bs but necessary for TextBox lol
         pub fn drawBuffer(self: *Text_(M), buf: string_type) void {
-            commons.toSentinel(buf, &self.body_cstr);
+            toSentinel(buf, &self.body_cstr);
 
             rl.drawTextEx(
                 self.font,
@@ -462,7 +472,7 @@ pub const TextBox = struct {
 
         if (self.focused and self.cursor_visible) {
             // measure width of text up to cursor_pos to place caret
-            commons.toSentinel(self.inner_text.body[0..self.cursor_pos], &self.till_cursor_cstr);
+            toSentinel(self.inner_text.body[0..self.cursor_pos], &self.till_cursor_cstr);
 
             const pre_dim = rl.measureTextEx(
                 self.inner_text.font,

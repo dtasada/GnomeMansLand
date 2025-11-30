@@ -76,15 +76,15 @@ pub fn build(b: *std.Build) void {
     const raylib_dep = b.dependency("raylib_zig", .{ .target = target, .optimize = optimize });
     const raylib_artifact = raylib_dep.artifact("raylib");
 
-    const raylib_mod: Module = .init("raylib", raylib_dep.module("raylib"));
-    const raygui_mod: Module = .init("raygui", raylib_dep.module("raygui"));
-    const network_mod: Module = .init("network", b.dependency("network", .{}).module("network"));
+    const raylib_mod = Module.init("raylib", raylib_dep.module("raylib"));
+    const raygui_mod = Module.init("raygui", raylib_dep.module("raygui"));
+    const network_mod = Module.init("network", b.dependency("network", .{}).module("network"));
+    const s2s_mod = Module.init("s2s", b.dependency("s2s", .{}).module("s2s"));
 
     const socket_packet_mod = modules.create("socket_packet", "src/socket_packet.zig");
 
-    const commons_mod = modules.create("commons", "src/commons.zig").addImports(&.{socket_packet_mod});
+    const commons_mod = modules.create("commons", "src/commons.zig");
 
-    const s2s_mod = modules.create("s2s", "lib/s2s.zig");
     const client_mod = modules.create("client", "src/client/Client.zig").addImports(&.{ s2s_mod, network_mod });
     const server_mod = modules.create("server", "src/server/Server.zig").addImports(&.{ s2s_mod, network_mod });
     socket_packet_mod.addImport(server_mod);
