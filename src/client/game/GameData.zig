@@ -13,19 +13,14 @@ pub const Map = @import("Map.zig");
 
 const Self = @This();
 
-map: ?Map,
-players: std.ArrayList(Player),
+map: Map,
+players: std.ArrayList(Player) = .{},
 
-pub fn init(alloc: std.mem.Allocator) !Self {
-    return .{
-        .map = null,
-        .players = try std.ArrayList(Player).initCapacity(alloc, 1),
-    };
+pub fn init(alloc: std.mem.Allocator, map_size: commons.v2u) !Self {
+    return .{ .map = try .init(alloc, map_size) };
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
-    if (self.map) |*map|
-            map.deinit(alloc);
-
+    self.map.deinit(alloc);
     self.players.deinit(alloc);
 }

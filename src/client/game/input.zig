@@ -45,7 +45,7 @@ pub fn handleKeys(in_game: *InGame, game: *Game) !void {
             if (game.client) |client| {
                 if (getMouseToWorld(in_game, game)) |pos| {
                     const move_player = socket_packet.MovePlayer.init(.init(pos.x, pos.z));
-                    try client.serializeSend(game.alloc, move_player);
+                    try client.serializeSend(move_player);
                 }
             }
         }
@@ -94,18 +94,16 @@ fn toggleMouse(is_enabled: *bool) void {
 fn getMouseToWorld(in_game: *const InGame, game: *Game) ?rl.Vector3 {
     if (in_game.camera) |camera| {
         if (game.client) |client| {
-            if (client.game_data.map) |map| {
-                for (map.models) |model| {
-                    if (model) |m| {
-                        const mouse_pos_ray = rl.getScreenToWorldRay(rl.getMousePosition(), camera);
-                        const mouse_world_collision = rl.getRayCollisionMesh(mouse_pos_ray, m.meshes[0], m.transform);
-                        if (mouse_world_collision.point.equals(.zero()) != 0)
-                            // if collision returns v3(0), skip this model
-                            continue
-                        else
-                            // else return this collision point
-                            return mouse_world_collision.point;
-                    }
+            for (client.game_data.map.models) |model| {
+                if (model) |m| {
+                    const mouse_pos_ray = rl.getScreenToWorldRay(rl.getMousePosition(), camera);
+                    const mouse_world_collision = rl.getRayCollisionMesh(mouse_pos_ray, m.meshes[0], m.transform);
+                    if (mouse_world_collision.point.equals(.zero()) != 0)
+                        // if collision returns v3(0), skip this model
+                        continue
+                    else
+                        // else return this collision point
+                        return mouse_world_collision.point;
                 }
             }
         }

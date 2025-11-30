@@ -2,10 +2,10 @@ const std = @import("std");
 
 const rl = @import("raylib");
 
-const ui = @import("ui.zig");
-
 const Game = @import("game");
 const State = @import("State.zig");
+
+const ui = @import("ui.zig");
 
 const Self = @This();
 
@@ -25,12 +25,12 @@ pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
     defer self.buttons.deinit(alloc);
 }
 
-pub fn update(self: *const Self, game: *Game) !void {
+pub fn update(self: *const Self, state: *State) !void {
     rl.beginDrawing();
     rl.clearBackground(.black);
 
     try self.buttons.update(.{
-        .{ State.openLobby, .{ &game.state, game } },
+        .{ State.openLobby, .{state} },
     });
 
     rl.endDrawing();

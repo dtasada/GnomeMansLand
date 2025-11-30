@@ -32,6 +32,7 @@ lobby_settings: LobbySettings,
 client_setup: ClientSetup,
 server_setup: ServerSetup,
 in_game: InGame,
+alloc: std.mem.Allocator,
 
 /// Initializes all states and defaults to Lobby.
 pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
@@ -42,23 +43,24 @@ pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
         .server_setup = try ServerSetup.init(alloc, settings),
         .client_setup = try ClientSetup.init(alloc, settings),
         .in_game = try InGame.init(alloc),
+        .alloc = alloc,
     };
 }
 
 /// Deinitializes all states.
-pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
-    self.client_setup.deinit(alloc);
-    self.server_setup.deinit(alloc);
-    self.lobby.deinit(alloc);
-    self.lobby_settings.deinit(alloc);
-    self.in_game.deinit(alloc);
+pub fn deinit(self: *Self) void {
+    self.client_setup.deinit(self.alloc);
+    self.server_setup.deinit(self.alloc);
+    self.lobby.deinit(self.alloc);
+    self.lobby_settings.deinit(self.alloc);
+    self.in_game.deinit(self.alloc);
 }
 
 /// Updates the current active state.
 pub fn update(self: *Self, game: *Game) !void {
     switch (self.type) {
         .lobby => try self.lobby.update(game),
-        .lobby_settings => try self.lobby_settings.update(game),
+        .lobby_settings => try self.lobby_settings.update(self),
         .client_setup => try self.client_setup.update(game),
         .server_setup => try self.server_setup.update(game),
         .game => try self.in_game.update(game),
@@ -69,8 +71,8 @@ pub fn openSettings(self: *Self) void {
     self.type = .lobby_settings;
 }
 
-pub fn openLobby(self: *Self, game: *Game) void {
-    self.lobby.reinit(game.alloc) catch @panic("unimplemented");
+pub fn openLobby(self: *Self) void {
+    self.lobby.reinit(self.alloc) catch @panic("unimplemented");
     self.type = .lobby;
 }
 

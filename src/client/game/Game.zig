@@ -58,7 +58,7 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
-    self.state.deinit(self.alloc);
+    self.state.deinit();
 
     ui.chalk_font.unload();
     ui.gwathlyn_font.unload();
@@ -154,6 +154,14 @@ fn parseSettings(alloc: std.mem.Allocator) !std.json.Parsed(Settings) {
 
     return std.json.parseFromSlice(Settings, alloc, file, .{});
 }
+
+pub const Context = struct {
+    alloc: std.mem.Allocator,
+    settings: *Settings,
+    client: *?*Client,
+    server: *?*Server,
+    state: *State,
+};
 
 /// main game loop
 pub fn loop(self: *Self) !void {

@@ -103,7 +103,7 @@ pub fn update(self: *Self, game: *Game) !void {
     });
     try self.button_set.update(.{
         .{ State.hostServer, .{ &game.state, game } },
-        .{ State.openLobby, .{ &game.state, game } },
+        .{ State.openLobby, .{&game.state} },
     });
 
     // bro do not touch this code this is so fragile bro. null termination sucks

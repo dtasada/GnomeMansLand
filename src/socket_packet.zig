@@ -12,14 +12,15 @@ pub const Descriptor = enum(u8) {
     player_state,
     map_chunk,
     server_full,
-    client_connect,
-    move_player,
+    client_requests_connect,
+    client_requests_move_player,
     resend_request,
+    server_accepted_client,
 };
 
 /// Object identifying a new player.
 pub const ClientConnect = struct {
-    descriptor: Descriptor = .client_connect,
+    descriptor: Descriptor = .client_requests_connect,
     nickname: []const u8,
 
     pub fn init(nickname: []const u8) ClientConnect {
@@ -128,7 +129,7 @@ pub const Player = struct {
 
 /// Requests the server to move a player to `new_pos`.
 pub const MovePlayer = struct {
-    descriptor: Descriptor = .move_player,
+    descriptor: Descriptor = .client_requests_move_player,
     new_pos: commons.v2f,
 
     pub fn init(new_pos: commons.v2f) MovePlayer {
@@ -139,4 +140,13 @@ pub const MovePlayer = struct {
 /// Send to client when the server is full and has reached the maximum player limit.
 pub const ServerFull = struct {
     descriptor: Descriptor = .server_full,
+};
+
+pub const ServerAcceptedClient = struct {
+    descriptor: Descriptor = .server_accepted_client,
+    map_size: commons.v2u,
+
+    pub fn init(map_size: commons.v2u) ServerAcceptedClient {
+        return .{ .map_size = map_size };
+    }
 };

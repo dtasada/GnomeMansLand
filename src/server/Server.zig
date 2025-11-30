@@ -138,7 +138,6 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
                 } else break; // Not enough data for length
             } else if (pending_data.items.len >= 4 + message_len) {
                 const message_payload = pending_data.items[4 .. 4 + message_len];
-                std.debug.print("server: message bytes: {any}\n", .{message_payload});
                 try self.handleMessage(client, message_payload);
 
                 const processed_len = 4 + message_len;
@@ -179,7 +178,7 @@ fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) 
     var serializer_stream = std.Io.Reader.fixed(message_bytes[@sizeOf(socket_packet.Descriptor)..]);
 
     switch (descriptor) {
-        .client_connect => {
+        .client_requests_connect => {
             var client_connect = try s2s.deserializeAlloc(&serializer_stream, socket_packet.ClientConnect, self.alloc);
             defer s2s.free(self.alloc, socket_packet.ClientConnect, &client_connect);
 
@@ -191,6 +190,8 @@ fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) 
                 else => return err,
             };
 
+            try client.serializeSend(self.alloc, socket_packet.ServerAcceptedClient.init(self.game_data.map.size));
+
             // Send map data to the client
             while (!self.game_data.map.network_chunks_ready.load(.monotonic)) {}
             for (self.socket_packets.map_chunks) |c|
@@ -200,7 +201,7 @@ fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) 
                 };
         },
         .resend_request => @panic("unimplemented"),
-        .move_player => {
+        .client_requests_move_player => {
             const move_player = try s2s.deserializeAlloc(&serializer_stream, socket_packet.MovePlayer, self.alloc);
             self.game_data.players.items[client.id].position = move_player.new_pos;
         },

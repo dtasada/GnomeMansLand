@@ -19,7 +19,7 @@ const MIN_WALL_HEIGHT: f32 = -200.0;
 /// Actual 2D height map data.
 height_map: []f32,
 /// Amount of numbers that have been read into `height_map`. Range (0..=height_map.len)
-_height_map_filled: usize = 0,
+_height_map_filled: usize,
 
 /// Is true if this client is responsible for cleaning up the height map.
 /// Only false if this game instance also is a server host.
@@ -57,42 +57,48 @@ const TerrainHeights = struct {
     snow: f32 = 1.0,
 };
 
-pub fn init(alloc: std.mem.Allocator, first_packet: socket_packet.MapChunk) !Self {
-    const chunks_x = (first_packet.total_size.x + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
-    const chunks_y = (first_packet.total_size.y + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
-    const amount_of_terrain_models = chunks_x * chunks_y;
-    const amount_of_models = amount_of_terrain_models + 5;
-
-    // Add safety check for too many models
-    if (amount_of_models > 2048)
-        commons.print(
-            "Warning: {} models requested, this may cause performance issues\n",
-            .{amount_of_models},
-            .yellow,
-        );
-
-    var self: Self = .{
-        .size = first_packet.total_size,
-        .height_map = try alloc.alloc(f32, first_packet.total_size.x * first_packet.total_size.y),
+pub fn init(alloc: std.mem.Allocator, size: commons.v2u) !Self {
+    return .{
+        .size = size,
+        .height_map = try alloc.alloc(f32, size.x * size.y),
+        ._height_map_filled = 0,
         .owns_height_map = true,
         .models = b: {
-            const m = try alloc.alloc(?rl.Model, amount_of_models);
+            const m = try alloc.alloc(?rl.Model, calcAmountOfModels(size));
             @memset(m, null);
             break :b m;
         },
     };
-
-    self.addChunk(first_packet);
-    return self;
 }
 
-pub fn initFromExisting(alloc: std.mem.Allocator, server_world: *@import("server").GameData.Map) !Self {
-    const chunks_x = (server_world.size.x + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
-    const chunks_y = (server_world.size.y + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
+pub fn initFromExisting(alloc: std.mem.Allocator, server_map: *@import("server").GameData.Map) !Self {
+    return .{
+        .size = server_map.size,
+        .height_map = server_map.height_map,
+        .owns_height_map = false,
+        ._height_map_filled = server_map.height_map.len,
+        .models = b: {
+            const m = try alloc.alloc(?rl.Model, calcAmountOfModels(server_map.size));
+            @memset(m, null);
+            break :b m;
+        },
+    };
+}
+
+pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
+    if (self.owns_height_map) alloc.free(self.height_map);
+
+    // Free GPU resources
+    for (self.models) |model| if (model) |m| rl.unloadModel(m);
+    alloc.free(self.models);
+}
+
+inline fn calcAmountOfModels(size: commons.v2u) usize {
+    const chunks_x = (size.x + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
+    const chunks_y = (size.y + MODEL_RESOLUTION - 1) / MODEL_RESOLUTION;
     const amount_of_terrain_models = chunks_x * chunks_y;
     const amount_of_models = amount_of_terrain_models + 5;
 
-    // Add safety check for too many models
     if (amount_of_models > 2048)
         commons.print(
             "Warning: {} models requested, this may cause performance issues\n",
@@ -100,20 +106,7 @@ pub fn initFromExisting(alloc: std.mem.Allocator, server_world: *@import("server
             .yellow,
         );
 
-    var self: Self = .{
-        .size = server_world.size,
-        .height_map = server_world.height_map,
-        .owns_height_map = false,
-        .models = b: {
-            const m = try alloc.alloc(?rl.Model, amount_of_models);
-            @memset(m, null);
-            break :b m;
-        },
-    };
-
-    self._height_map_filled = self.height_map.len;
-
-    return self;
+    return amount_of_models;
 }
 
 pub fn addChunk(self: *Self, map_chunk: socket_packet.MapChunk) void {
@@ -130,14 +123,6 @@ pub fn allFloatsDownloaded(self: *const Self) bool {
 
 pub fn allModelsGenerated(self: *const Self) bool {
     return self.models_generated == self.models.len;
-}
-
-pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
-    if (self.owns_height_map) alloc.free(self.height_map);
-
-    // Free GPU resources
-    for (self.models) |model| if (model) |m| rl.unloadModel(m);
-    alloc.free(self.models);
 }
 
 pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {

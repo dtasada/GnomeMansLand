@@ -53,22 +53,21 @@ fn getLightShader() !rl.Shader {
 /// resets camera back to the middle of the world
 pub fn resetCamera(self: *Self, game: *Game) void {
     if (game.client) |client| {
-        if (client.game_data.map) |map| {
-            // Use more reasonable camera positioning to avoid precision issues
-            const center_x = @as(f32, @floatFromInt(map.size.x)) * 0.5;
-            const center_z = @as(f32, @floatFromInt(map.size.y)) * 0.5;
-            const camera_height = @as(f32, @floatFromInt(@max(map.size.x, map.size.y))); // Adjust height based on map size
+        const size = client.game_data.map.size;
+        // Use more reasonable camera positioning to avoid precision issues
+        const center_x = @as(f32, @floatFromInt(size.x)) * 0.5;
+        const center_z = @as(f32, @floatFromInt(size.y)) * 0.5;
+        const camera_height = @as(f32, @floatFromInt(@max(size.x, size.y))); // Adjust height based on map size
 
-            rcamera.MAX_FOV = camera_height * 2.0;
+        rcamera.MAX_FOV = camera_height * 2.0;
 
-            self.camera = .{
-                .fovy = rcamera.MAX_FOV,
-                .position = rl.Vector3.init(center_x, camera_height, center_z + camera_height * 0.5),
-                .projection = .orthographic,
-                .target = rl.Vector3.init(center_x, 0.0, center_z),
-                .up = rl.Vector3.init(0, 1, 0),
-            };
-        }
+        self.camera = .{
+            .fovy = rcamera.MAX_FOV,
+            .position = rl.Vector3.init(center_x, camera_height, center_z + camera_height * 0.5),
+            .projection = .orthographic,
+            .target = rl.Vector3.init(center_x, 0.0, center_z),
+            .up = rl.Vector3.init(0, 1, 0),
+        };
     }
 }
 
@@ -90,58 +89,57 @@ fn drawUi(self: *const Self, game: *Game) void {
 
     // Add map debugging
     if (game.client) |client| {
-        if (client.game_data.map) |map| {
-            rl.drawText(rl.textFormat("World: %dx%d, Complete: %d", .{
-                map.size.x,
-                map.size.y,
-                @as(i32, if (map.allFloatsDownloaded()) 1 else 0),
-            }), 12, 72, 24, .white);
+        const map = &client.game_data.map;
+        rl.drawText(rl.textFormat("World: %dx%d, Complete: %d", .{
+            map.size.x,
+            map.size.y,
+            @as(i32, if (map.allFloatsDownloaded()) 1 else 0),
+        }), 12, 72, 24, .white);
 
-            const chunks_total = map.models.len;
-            var chunks_loaded: u32 = 0;
-            for (map.models) |model| {
-                if (model != null) chunks_loaded += 1;
-            }
-
-            rl.drawText(rl.textFormat("Chunks: %d/%d loaded", .{ chunks_loaded, chunks_total }), 12, 112, 24, .white);
+        const chunks_total = map.models.len;
+        var chunks_loaded: u32 = 0;
+        for (map.models) |model| {
+            if (model != null) chunks_loaded += 1;
         }
+
+        rl.drawText(rl.textFormat("Chunks: %d/%d loaded", .{ chunks_loaded, chunks_total }), 12, 112, 24, .white);
     }
 }
 
 pub fn update(self: *Self, game: *Game) !void {
     // loading screen
     if (game.client) |client| {
-        if (client.game_data.map) |*map| {
-            if (!map.allFloatsDownloaded() or !map.allModelsGenerated()) {
-                rl.beginDrawing();
-                rl.clearBackground(.black);
+        const map = &client.game_data.map;
 
-                var buf: [33]u8 = undefined; // hardcoded 33 bytes bc that's the longest possible string.
-                const body = if (!map.allFloatsDownloaded())
-                    try std.fmt.bufPrint(&buf, "Downloading world ({}%)...", .{
-                        @divFloor(100 * map._height_map_filled, map.height_map.len),
-                    })
-                else if (!map.allModelsGenerated()) blk: {
-                    map.genModels(game.settings, self.light_shader) catch |err| {
-                        commons.print("Failed to generate model: {}", .{err}, .red);
-                    };
-                    break :blk try std.fmt.bufPrint(&buf, "Generating world models ({}%)...", .{
-                        @divFloor(100 * map.models_generated, map.models.len),
-                    });
-                } else unreachable;
+        if (!map.allFloatsDownloaded() or !map.allModelsGenerated()) {
+            rl.beginDrawing();
+            rl.clearBackground(.black);
 
-                var loading_screen_text = try ui.Text.init(.{
-                    .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0,
-                    .y = @as(f32, @floatFromInt(rl.getScreenHeight())) / 2.0,
-                    .anchor = .center,
-                    .body = body,
+            var buf: [33]u8 = undefined; // hardcoded 33 bytes bc that's the longest possible string.
+            const body = if (!map.allFloatsDownloaded())
+                try std.fmt.bufPrint(&buf, "Downloading world ({}%)...", .{
+                    @divFloor(100 * map._height_map_filled, map.height_map.len),
+                })
+            else if (!map.allModelsGenerated()) blk: {
+                map.genModels(game.settings, self.light_shader) catch |err| {
+                    commons.print("Failed to generate model: {}", .{err}, .red);
+                };
+                break :blk try std.fmt.bufPrint(&buf, "Generating world models ({}%)...", .{
+                    @divFloor(100 * map.models_generated, map.models.len),
                 });
+            } else unreachable;
 
-                loading_screen_text.update();
+            var loading_screen_text = try ui.Text.init(.{
+                .x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2.0,
+                .y = @as(f32, @floatFromInt(rl.getScreenHeight())) / 2.0,
+                .anchor = .center,
+                .body = body,
+            });
 
-                rl.endDrawing();
-                return;
-            }
+            loading_screen_text.update();
+
+            rl.endDrawing();
+            return;
         }
     }
 
@@ -165,27 +163,25 @@ pub fn update(self: *Self, game: *Game) !void {
     rl.gl.rlDisableBackfaceCulling();
 
     if (game.client) |client| {
-        if (client.game_data.map) |*map| {
-            if (self.camera == null)
-                self.resetCamera(game);
+        if (self.camera == null)
+            self.resetCamera(game);
 
-            // Draw players
-            for (client.game_data.players.items) |player| {
-                if (player.position) |pos| {
-                    rl.drawCube(rl.Vector3.init(
-                        pos.x,
-                        map.getHeight(@intFromFloat(pos.x), @intFromFloat(pos.y)),
-                        pos.y,
-                    ), 8, 50, 8, .red);
-                }
+        // Draw players
+        for (client.game_data.players.items) |player| {
+            if (player.position) |pos| {
+                rl.drawCube(rl.Vector3.init(
+                    pos.x,
+                    client.game_data.map.getHeight(@intFromFloat(pos.x), @intFromFloat(pos.y)),
+                    pos.y,
+                ), 8, 50, 8, .red);
             }
+        }
 
-            // Enhanced model rendering with debugging
-            if (map.allModelsGenerated()) {
-                for (map.models) |model| if (model) |m| {
-                    m.draw(.zero(), 1.0, .white);
-                } else unreachable;
-            }
+        // Enhanced model rendering with debugging
+        if (client.game_data.map.allModelsGenerated()) {
+            for (client.game_data.map.models) |model| if (model) |m| {
+                m.draw(.zero(), 1.0, .white);
+            } else unreachable;
         }
     }
 
