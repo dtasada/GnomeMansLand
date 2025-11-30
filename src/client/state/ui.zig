@@ -351,6 +351,10 @@ pub const TextBox = struct {
         alloc.free(self.inner_text.body);
     }
 
+    pub fn getBody(self: *const TextBox) []const u8 {
+        return self.inner_text.body;
+    }
+
     pub fn update(self: *TextBox) !void {
         const min_length = 96.0;
         const base_bar_len = @max(min_length, self.inner_text.hitbox.width);

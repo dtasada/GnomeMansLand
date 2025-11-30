@@ -63,16 +63,16 @@ pub fn reinit(self: *Self, alloc: std.mem.Allocator) !void {
     self.* = try init(alloc);
 }
 
-pub fn update(self: *Self, alloc: std.mem.Allocator, state: *State) !void {
+pub fn update(self: *Self, game: *Game) !void {
     if (rl.isWindowResized())
-        try self.reinit(alloc);
+        try self.reinit(game.alloc);
 
     rl.clearBackground(.black);
 
     try self.buttons.update(.{
-        .{ State.serverSetup, .{state} },
-        .{ State.clientSetup, .{state} },
-        .{ State.openSettings, .{state} },
+        .{ State.serverSetup, .{&game.state} },
+        .{ State.clientSetup, .{&game.state} },
+        .{ State.openSettings, .{&game.state} },
     });
 
     self.title_text.update();

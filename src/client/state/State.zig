@@ -18,14 +18,15 @@ pub const ui = @import("ui.zig");
 
 const Self = @This();
 
-state: enum {
+const Type = enum {
     lobby,
     game,
     lobby_settings,
     client_setup,
     server_setup,
-},
+};
 
+type: Type,
 lobby: Lobby,
 lobby_settings: LobbySettings,
 client_setup: ClientSetup,
@@ -35,7 +36,7 @@ in_game: InGame,
 /// Initializes all states and defaults to Lobby.
 pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
     return .{
-        .state = .lobby,
+        .type = .lobby,
         .lobby = try Lobby.init(alloc),
         .lobby_settings = try LobbySettings.init(alloc),
         .server_setup = try ServerSetup.init(alloc, settings),
@@ -55,8 +56,8 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
 
 /// Updates the current active state.
 pub fn update(self: *Self, game: *Game) !void {
-    switch (self.state) {
-        .lobby => try self.lobby.update(game.alloc, self),
+    switch (self.type) {
+        .lobby => try self.lobby.update(game),
         .lobby_settings => try self.lobby_settings.update(game),
         .client_setup => try self.client_setup.update(game),
         .server_setup => try self.server_setup.update(game),
@@ -65,44 +66,34 @@ pub fn update(self: *Self, game: *Game) !void {
 }
 
 pub fn openSettings(self: *Self) void {
-    self.state = .lobby_settings;
+    self.type = .lobby_settings;
 }
 
 pub fn openLobby(game: *Game) void {
-    game.state.lobby.reinit(game.alloc) catch {};
-    game.state.state = .lobby;
+    game.state.lobby.reinit(game.alloc) catch @panic("unimplemented");
+    game.state.type = .lobby;
 }
 
 pub fn clientSetup(self: *Self) void {
-    self.state = .client_setup;
+    self.type = .client_setup;
 }
 
 pub fn serverSetup(self: *Self) void {
-    self.state = .server_setup;
+    self.type = .server_setup;
 }
 
 /// Creates client and opens game normally.
 pub fn openGameRemote(game: *Game) !void {
     if (game.state.lobby.nickname_input.len != 0) { // only if nickname isn't empty
-        if (game.client) |client| client.deinit(game.alloc);
-
-        const client_connect = socket_packet.ClientConnect.init(game.state.lobby.nickname_input.inner_text.body);
-        game.client = try Client.init(game.alloc, game.settings, client_connect);
-        game.state.state = .game;
-    }
+        try game.reinitClient(game.state.lobby.nickname_input.getBody());
+        game.state.type = .game;
+    } else @panic("unimplemented");
 }
 
 /// Creates client and opens game, copying map data directly from local server
 pub fn openGameLocal(game: *Game) !void {
     if (game.state.lobby.nickname_input.len != 0) { // only if nickname isn't empty
-        if (game.client) |client| client.deinit(game.alloc);
-
-        // Create the client
-        game.client = try Client.init(
-            game.alloc,
-            game.settings,
-            socket_packet.ClientConnect.init(game.state.lobby.nickname_input.inner_text.body),
-        );
+        try game.reinitClient(game.state.lobby.nickname_input.getBody());
 
         // Perform the memory copy
         game.client.?.game_data.map = try Game.GameData.Map.initFromExisting(
@@ -110,15 +101,13 @@ pub fn openGameLocal(game: *Game) !void {
             game.server.?.game_data.map,
         );
 
-        game.state.state = .game;
-    }
+        game.state.type = .game;
+    } else @panic("unimplemented");
 }
 
 /// (Re)initializes server. Starts a thread for `waitForServer`
 pub fn hostServer(game: *Game) !void {
-    if (game.server) |s| s.deinit(game.alloc);
-
-    game.server = try Server.init(game.alloc, game.settings.server);
+    try game.reinitServer();
 
     const t = try std.Thread.spawn(.{}, waitForServer, .{game});
     t.detach();

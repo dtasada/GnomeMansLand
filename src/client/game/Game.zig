@@ -6,6 +6,7 @@ const rl = @import("raylib");
 
 const State = @import("state");
 const commons = @import("commons");
+const socket_packet = @import("socket_packet");
 const ui = State.ui;
 
 const Server = @import("server");
@@ -158,4 +159,16 @@ fn parseSettings(alloc: std.mem.Allocator) !std.json.Parsed(Settings) {
 pub fn loop(self: *Self) !void {
     while (!rl.windowShouldClose())
         try self.state.update(self);
+}
+
+pub fn reinitServer(self: *Self) !void {
+    if (self.server) |s| s.deinit(self.alloc);
+    self.server = try Server.init(self.alloc, self.settings.server);
+}
+
+pub fn reinitClient(self: *Self, nickname: []const u8) !void {
+    if (self.client) |client| client.deinit(self.alloc);
+
+    const client_connect = socket_packet.ClientConnect.init(nickname);
+    self.client = try Client.init(self.alloc, self.settings, client_connect);
 }
