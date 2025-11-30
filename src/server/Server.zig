@@ -86,14 +86,15 @@ const Client = struct {
         const descriptor_byte: socket_packet.Descriptor.Type = @intFromEnum(object.descriptor);
 
         const payload_bytes = serialize_writer.written();
-        const full_length = @sizeOf(socket_packet.Descriptor.Type) + payload_bytes.len; // Descriptor byte + payload
+        const full_length: u32 = @sizeOf(socket_packet.Descriptor.Type) +
+            @as(u32, @intCast(payload_bytes.len));
 
         var client_writer_buf: [4096]u8 = undefined;
         var client_writer = self.sock.writer(&client_writer_buf);
-        const client_writer_interface = &client_writer.interface;
-        try client_writer_interface.writeInt(usize, @intCast(full_length), .big); // Length prefix
-        try client_writer_interface.writeInt(socket_packet.Descriptor.Type, descriptor_byte, .big); // Descriptor
-        try client_writer_interface.writeAll(payload_bytes); // s2s Payload
+        try client_writer.interface.writeInt(u32, full_length, .big);
+        try client_writer.interface.writeInt(socket_packet.Descriptor.Type, descriptor_byte, .big);
+        try client_writer.interface.writeAll(payload_bytes);
+        try client_writer.interface.flush();
     }
 };
 
@@ -107,42 +108,51 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
 
     try client.sock.setReadTimeout(500 * 1000);
 
-    var buf = try self.alloc.alloc(u8, BYTE_LIMIT);
-    defer self.alloc.free(buf);
+    var pending_data = try std.ArrayList(u8).initCapacity(self.alloc, BYTE_LIMIT);
+    defer pending_data.deinit(self.alloc);
+
+    var read_buffer: [4096]u8 = undefined;
+
+    var message_len: u32 = 0;
+    var reading_len = true;
 
     while (self.running.load(.monotonic)) {
-        const bytes_read = client.sock.receive(buf) catch |err| switch (err) {
-            error.WouldBlock => continue,
-            error.ConnectionResetByPeer => {
-                commons.print(
-                    "Socket disconnected: {}\n",
-                    .{err},
-                    .blue,
-                );
-                return;
+        const bytes_read = client.sock.receive(&read_buffer) catch |err| switch (err) {
+            error.WouldBlock => {
+                std.Thread.sleep(10); // Sleep briefly if no data
+                continue;
             },
-            else => return commons.printErr(
-                err,
-                "Couldn't read from socket: {}\n",
-                .{err},
-                .red,
-            ),
+            error.ConnectionResetByPeer => break, // Client disconnected
+            else => return err,
         };
 
-        if (bytes_read == 0) break;
+        if (bytes_read == 0) continue;
 
-        const full_message = buf[0..bytes_read];
+        try pending_data.appendSlice(self.alloc, read_buffer[0..bytes_read]);
 
-        const message_len = std.mem.readInt(usize, full_message[0..@sizeOf(usize)], .big) +
-            @sizeOf(socket_packet.Descriptor.Type);
+        // Loop to process all complete messages in the pending_data buffer
+        while (true) {
+            if (reading_len) {
+                if (pending_data.items.len >= 4) {
+                    message_len = std.mem.readInt(u32, pending_data.items[0..@sizeOf(u32)], .big);
+                    reading_len = false;
+                } else break; // Not enough data for length
+            } else if (pending_data.items.len >= 4 + message_len) {
+                const message_payload = pending_data.items[4 .. 4 + message_len];
+                std.debug.print("server: message bytes: {any}\n", .{message_payload});
+                try self.handleMessage(client, message_payload);
 
-        // handle current message
-        try self.handleMessage(client, full_message[@sizeOf(usize)..message_len]);
-        std.Thread.sleep(self.settings.polling_rate * std.time.ns_per_ms);
+                const processed_len = 4 + message_len;
+                try pending_data.replaceRange(self.alloc, 0, processed_len, &.{});
+
+                reading_len = true;
+                message_len = 0;
+            } else break; // Not enough data for payload
+        }
     }
 
-    _ = self.clients.orderedRemove(client.id);
-    self.alloc.destroy(client);
+    // The defer block will handle cleanup of threads and sockets.
+    // The main Server.deinit will handle destroying the client object itself.
     commons.print("Client disconnected.\n", .{}, .blue);
 }
 
@@ -168,7 +178,9 @@ fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) 
 
     switch (descriptor) {
         .client_connect => {
-            const client_connect = try s2s.deserializeAlloc(&serializer_stream, socket_packet.ClientConnect, self.alloc);
+            var client_connect = try s2s.deserializeAlloc(&serializer_stream, socket_packet.ClientConnect, self.alloc);
+            defer s2s.free(self.alloc, socket_packet.ClientConnect, &client_connect);
+
             self.appendPlayer(client_connect) catch |err| switch (err) {
                 error.ServerFull => {
                     try client.serializeSend(self.alloc, socket_packet.ServerFull{});

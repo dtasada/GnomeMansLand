@@ -60,12 +60,12 @@ pub fn init(alloc: std.mem.Allocator, settings: Settings, connect_message: socke
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
-    self.game_data.deinit(self.alloc);
-
     self.running.store(false, .monotonic);
 
     self.listen_thread.join();
     self.sock.close();
+
+    self.game_data.deinit(self.alloc);
 
     network.deinit();
 
@@ -74,61 +74,83 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
 
 /// Meant to run as a thread. Listens for new messages and calls `handleMessage` upon receiving one.
 fn listen(self: *Self) !void {
-    const buf = try self.alloc.alloc(u8, BYTE_LIMIT); // don't decrease this. decreasing it makes it slower
-    defer self.alloc.free(buf);
+    var pending_data = try std.ArrayList(u8).initCapacity(self.alloc, BYTE_LIMIT);
+    defer pending_data.deinit(self.alloc);
 
-    var pending = try std.ArrayList(u8).initCapacity(self.alloc, BYTE_LIMIT);
-    defer pending.deinit(self.alloc);
+    var read_buffer: [4096]u8 = undefined;
 
-    while (self.running.load(.monotonic)) : (std.Thread.sleep(std.time.ns_per_ms * self.polling_rate)) {
-        const bytes_read = self.sock.receive(buf) catch |err| switch (err) {
-            error.WouldBlock => continue,
+    var message_len: u32 = 0;
+    var reading_len = true;
+
+    while (self.running.load(.monotonic)) {
+        const bytes_read = self.sock.receive(&read_buffer) catch |err| switch (err) {
+            error.WouldBlock => {
+                std.Thread.sleep(10); // Sleep briefly if no data
+                continue;
+            },
             error.ConnectionResetByPeer => {
                 self.running.store(false, .monotonic);
                 commons.print("Socket disconnected\n", .{}, .blue);
                 return;
             },
-            else => return commons.printErr(
-                err,
-                "Couldn't read from socket: {}\n",
-                .{err},
-                .red,
-            ),
+            else => return err,
         };
 
-        if (bytes_read == 0) break;
-        if (!self.running.load(.monotonic)) return;
+        if (bytes_read == 0) continue;
 
-        try pending.appendSlice(self.alloc, buf[0..bytes_read]);
+        try pending_data.appendSlice(self.alloc, read_buffer[0..bytes_read]);
 
-        // Process complete lines
-        const message_len = std.mem.readInt(usize, pending.items[0..@sizeOf(usize)], .big) +
-            @sizeOf(socket_packet.Descriptor.Type);
+        // Loop to process all complete messages in the pending_data buffer
+        while (true) {
+            if (reading_len) {
+                if (pending_data.items.len >= 4) {
+                    message_len = std.mem.readInt(u32, pending_data.items[0..4], .big);
+                    reading_len = false;
+                } else {
+                    // Not enough data for length, break and wait for more
+                    break;
+                }
+            }
 
-        try self.handleMessage(pending.items[@sizeOf(usize)..message_len]);
+            if (!reading_len) {
+                if (pending_data.items.len >= 4 + message_len) {
+                    // We have a full message (length prefix + payload)
+                    const message_payload = pending_data.items[4 .. 4 + message_len];
+                    try self.handleMessage(message_payload);
 
-        // Remove processed bytes from buffer
-        const range = try self.alloc.alloc(usize, message_len);
-        defer self.alloc.free(range);
-        for (0..message_len) |i| range[i] = i;
-        pending.orderedRemoveMany(range);
+                    // Remove the processed message from the buffer
+                    const processed_len = 4 + message_len;
+                    try pending_data.replaceRange(self.alloc, 0, processed_len, &.{});
+
+                    // Reset state to read the next length
+                    reading_len = true;
+                    message_len = 0;
+                } else {
+                    // Not enough data for payload, break and wait for more
+                    break;
+                }
+            }
+        }
     }
 }
 
 /// Deserializes a message and processes it
-fn handleMessage(self: *Self, message_bytes: []const u8) !void {
-    var stream = std.Io.Reader.fixed(message_bytes);
+fn handleMessage(self: *Self, message_payload: []const u8) !void {
+    var reader = std.Io.Reader.fixed(message_payload);
 
-    const descriptor: socket_packet.Descriptor = @enumFromInt(try stream.takeByte());
-    var serializer_stream = std.Io.Reader.fixed(message_bytes[@sizeOf(socket_packet.Descriptor)..]);
+    const descriptor_val = try reader.takeByte();
+    const descriptor = std.meta.intToEnum(socket_packet.Descriptor, descriptor_val) catch return error.InvalidMessage;
 
     switch (descriptor) {
         .player_state => {
-            const player = try s2s.deserializeAlloc(&serializer_stream, socket_packet.Player, self.alloc);
-            if (self.game_data.players.items.len <= @as(usize, player.player.id)) {
-                try self.game_data.players.append(self.alloc, player.player);
+            var packet = try s2s.deserializeAlloc(&reader, socket_packet.Player, self.alloc);
+            defer s2s.free(self.alloc, socket_packet.Player, &packet);
+
+            const player = packet.player;
+            if (self.game_data.players.items.len <= @as(usize, player.id)) {
+                try self.game_data.players.append(self.alloc, player);
             } else {
-                self.game_data.players.items[@intCast(player.player.id)] = player.player;
+                self.game_data.players.items[@intCast(player.id)] = player;
             }
         },
         .map_chunk => {
@@ -137,12 +159,13 @@ fn handleMessage(self: *Self, message_bytes: []const u8) !void {
                 if (!map.owns_height_map) return;
             }
 
-            const map_chunk = try s2s.deserializeAlloc(&serializer_stream, socket_packet.MapChunk, self.alloc);
+            var packet = try s2s.deserializeAlloc(&reader, socket_packet.MapChunk, self.alloc);
+            defer s2s.free(self.alloc, socket_packet.MapChunk, &packet);
 
             if (self.game_data.map) |*map|
-                map.addChunk(map_chunk)
+                map.addChunk(packet)
             else
-                self.game_data.map = try GameData.Map.init(self.alloc, map_chunk);
+                self.game_data.map = try GameData.Map.init(self.alloc, packet);
         },
         .server_full => @panic("unimplemented"),
         else => commons.print(
@@ -161,12 +184,14 @@ pub fn serializeSend(self: *const Self, alloc: std.mem.Allocator, object: anytyp
     const descriptor_byte: socket_packet.Descriptor.Type = @intFromEnum(object.descriptor);
 
     const payload_bytes = serialize_writer.written();
-    const full_length = @sizeOf(socket_packet.Descriptor.Type) + payload_bytes.len; // Descriptor byte + payload
+    std.debug.print("payload_bytes: {any}\n", .{payload_bytes});
+    const full_length: u32 = @sizeOf(socket_packet.Descriptor.Type) +
+        @as(u32, @intCast(payload_bytes.len));
 
     var client_writer_buf: [4096]u8 = undefined;
     var client_writer = self.sock.writer(&client_writer_buf);
-    const client_writer_interface = &client_writer.interface;
-    try client_writer_interface.writeInt(usize, @intCast(full_length), .big); // Length prefix
-    try client_writer_interface.writeInt(socket_packet.Descriptor.Type, descriptor_byte, .big); // Descriptor
-    try client_writer_interface.writeAll(payload_bytes); // s2s Payload
+    try client_writer.interface.writeInt(u32, full_length, .big);
+    try client_writer.interface.writeInt(socket_packet.Descriptor.Type, descriptor_byte, .big);
+    try client_writer.interface.writeAll(payload_bytes);
+    try client_writer.interface.flush();
 }
