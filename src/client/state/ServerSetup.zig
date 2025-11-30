@@ -64,7 +64,7 @@ pub fn update(self: *Self, game: *Game) !void {
                     &buf,
                     "Creating world ({}%)...",
                     .{@divFloor(
-                        map.floats_written,
+                        map.floats_written.load(.monotonic),
                         map.height_map.len,
                     )},
                 )

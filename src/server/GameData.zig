@@ -56,7 +56,7 @@ pub const Map = struct {
     height_map: []f32, // 2d in practice
     finished_generating: std.atomic.Value(bool) = .init(false),
     network_chunks_ready: std.atomic.Value(bool) = .init(false),
-    floats_written: usize = 0,
+    floats_written: std.atomic.Value(usize) = .init(0),
     network_chunks_generated: std.atomic.Value(usize) = .init(0),
     terrain_gen_thread: ?std.Thread = null,
 
@@ -137,13 +137,15 @@ pub const Map = struct {
                 freq *= settings.world_generation.lacunarity;
             }
 
-            mutex.lock();
-            self.height_map[y * self.size.x + x] = height;
-            self.floats_written += 1;
-            mutex.unlock();
+            {
+                mutex.lock();
+                defer mutex.unlock();
+                self.height_map[y * self.size.x + x] = height;
+                _ = self.floats_written.fetchAdd(1, .monotonic);
+            }
         }
 
-        if (self.floats_written == self.height_map.len)
+        if (self.floats_written.load(.monotonic) == self.height_map.len)
             self.finished_generating.store(true, .monotonic);
     }
 };
