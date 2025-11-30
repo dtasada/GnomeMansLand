@@ -6,7 +6,6 @@ const rl = @import("raylib");
 
 const State = @import("state");
 const commons = @import("commons");
-const socket_packet = @import("socket_packet");
 const ui = State.ui;
 
 const Server = @import("server");

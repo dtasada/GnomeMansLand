@@ -6,7 +6,9 @@ const commons = @import("commons");
 const ServerGameData = @import("server").GameData;
 
 /// Identifies the different types of messages that can be sent and received.
-pub const Descriptor = enum {
+pub const Descriptor = enum(u8) {
+    pub const Type = std.meta.Tag(@This()); // returns the integer type of the enum
+
     player_state,
     map_chunk,
     server_full,

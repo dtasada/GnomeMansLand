@@ -45,10 +45,7 @@ pub fn handleKeys(in_game: *InGame, game: *Game) !void {
             if (game.client) |client| {
                 if (getMouseToWorld(in_game, game)) |pos| {
                     const move_player = socket_packet.MovePlayer.init(.init(pos.x, pos.z));
-                    const move_player_string = try std.json.Stringify.valueAlloc(game.alloc, move_player, .{});
-                    defer game.alloc.free(move_player_string);
-
-                    try client.send(move_player_string);
+                    try client.serializeSend(game.alloc, move_player);
                 }
             }
         }

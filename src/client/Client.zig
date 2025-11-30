@@ -5,6 +5,7 @@ const network = @import("network");
 
 const commons = @import("commons");
 const socket_packet = @import("socket_packet");
+const s2s = @import("s2s");
 
 const GameData = @import("game").GameData;
 
@@ -48,9 +49,7 @@ pub fn init(alloc: std.mem.Allocator, settings: Settings, connect_message: socke
     self.running = std.atomic.Value(bool).init(true);
     errdefer self.running.store(false, .monotonic);
 
-    const connect_message_json = try std.json.Stringify.valueAlloc(self.alloc, connect_message, .{});
-    defer self.alloc.free(connect_message_json);
-    _ = try self.send(connect_message_json);
+    try self.serializeSend(self.alloc, connect_message);
 
     self.listen_thread = try std.Thread.spawn(.{}, Self.listen, .{self});
     self.polling_rate = settings.multiplayer.polling_rate;
@@ -103,64 +102,33 @@ fn listen(self: *Self) !void {
         try pending.appendSlice(self.alloc, buf[0..bytes_read]);
 
         // Process complete lines
-        var start: usize = 0;
-        while (std.mem.indexOfScalarPos(u8, pending.items, start, '\n')) |pos| {
-            const line = pending.items[start..pos];
-            if (line.len != 0) try self.handleMessage(line);
-            start = pos + 1;
-        }
+        const message_len = std.mem.readInt(usize, pending.items[0..@sizeOf(usize)], .big) +
+            @sizeOf(socket_packet.Descriptor.Type);
+
+        try self.handleMessage(pending.items[@sizeOf(usize)..message_len]);
 
         // Remove processed bytes from buffer
-        if (start > 0) {
-            const range = try self.alloc.alloc(usize, start);
-            defer self.alloc.free(range);
-            for (0..start) |i| range[i] = i;
-            pending.orderedRemoveMany(range);
-        }
+        const range = try self.alloc.alloc(usize, message_len);
+        defer self.alloc.free(range);
+        for (0..message_len) |i| range[i] = i;
+        pending.orderedRemoveMany(range);
     }
 }
 
-/// Parses a message and calls `processMessage`.
-fn handleMessage(self: *Self, message: []const u8) !void {
-    const message_parsed: std.json.Parsed(std.json.Value) = try std.json.parseFromSlice(
-        std.json.Value,
-        self.alloc,
-        message,
-        .{},
-    );
-    defer message_parsed.deinit();
+/// Deserializes a message and processes it
+fn handleMessage(self: *Self, message_bytes: []const u8) !void {
+    var stream = std.Io.Reader.fixed(message_bytes);
 
-    const message_root = message_parsed.value;
-    switch (message_root) {
-        .object => |object| try self.processMessage(
-            message_root,
-            try commons.getDescriptor(object, .server),
-        ),
-        else => return commons.printErr(
-            error.InvalidMessage,
-            "Received invalid message from server! JSON package must be an object.",
-            .{},
-            .yellow,
-        ),
-    }
-}
+    const descriptor: socket_packet.Descriptor = @enumFromInt(try stream.takeByte());
+    var serializer_stream = std.Io.Reader.fixed(message_bytes[@sizeOf(socket_packet.Descriptor)..]);
 
-/// Actually processes message and responds accordingly.
-fn processMessage(
-    self: *Self,
-    message_root: std.json.Value,
-    descriptor: socket_packet.Descriptor,
-) !void {
     switch (descriptor) {
         .player_state => {
-            const request_parsed = try std.json.parseFromValue(socket_packet.Player, self.alloc, message_root, .{});
-            defer request_parsed.deinit();
-
-            const player = request_parsed.value.player;
-            if (self.game_data.players.items.len <= @as(usize, player.id)) {
-                try self.game_data.players.append(self.alloc, player);
+            const player = try s2s.deserializeAlloc(&serializer_stream, socket_packet.Player, self.alloc);
+            if (self.game_data.players.items.len <= @as(usize, player.player.id)) {
+                try self.game_data.players.append(self.alloc, player.player);
             } else {
-                self.game_data.players.items[@intCast(player.id)] = player;
+                self.game_data.players.items[@intCast(player.player.id)] = player.player;
             }
         },
         .map_chunk => {
@@ -169,10 +137,8 @@ fn processMessage(
                 if (!map.owns_height_map) return;
             }
 
-            const request_parsed = try std.json.parseFromValue(socket_packet.MapChunk, self.alloc, message_root, .{});
-            defer request_parsed.deinit();
+            const map_chunk = try s2s.deserializeAlloc(&serializer_stream, socket_packet.MapChunk, self.alloc);
 
-            const map_chunk = request_parsed.value;
             if (self.game_data.map) |*map|
                 map.addChunk(map_chunk)
             else
@@ -187,6 +153,20 @@ fn processMessage(
     }
 }
 
-pub fn send(self: *const Self, message: []const u8) !void {
-    _ = try self.sock.send(message);
+pub fn serializeSend(self: *const Self, alloc: std.mem.Allocator, object: anytype) !void {
+    var serialize_writer = std.Io.Writer.Allocating.init(alloc);
+    defer serialize_writer.deinit();
+    try s2s.serialize(&serialize_writer.writer, @TypeOf(object), object);
+
+    const descriptor_byte: socket_packet.Descriptor.Type = @intFromEnum(object.descriptor);
+
+    const payload_bytes = serialize_writer.written();
+    const full_length = @sizeOf(socket_packet.Descriptor.Type) + payload_bytes.len; // Descriptor byte + payload
+
+    var client_writer_buf: [4096]u8 = undefined;
+    var client_writer = self.sock.writer(&client_writer_buf);
+    const client_writer_interface = &client_writer.interface;
+    try client_writer_interface.writeInt(usize, @intCast(full_length), .big); // Length prefix
+    try client_writer_interface.writeInt(socket_packet.Descriptor.Type, descriptor_byte, .big); // Descriptor
+    try client_writer_interface.writeAll(payload_bytes); // s2s Payload
 }

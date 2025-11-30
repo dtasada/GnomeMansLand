@@ -6,6 +6,7 @@ const network = @import("network");
 const socket_packet = @import("socket_packet");
 
 const commons = @import("commons");
+const s2s = @import("s2s");
 
 pub const GameData = @import("GameData.zig");
 
@@ -76,6 +77,24 @@ const Client = struct {
             break;
         }
     }
+
+    pub fn serializeSend(self: *const Client, alloc: std.mem.Allocator, object: anytype) !void {
+        var serialize_writer = std.Io.Writer.Allocating.init(alloc);
+        defer serialize_writer.deinit();
+        try s2s.serialize(&serialize_writer.writer, @TypeOf(object), object);
+
+        const descriptor_byte: socket_packet.Descriptor.Type = @intFromEnum(object.descriptor);
+
+        const payload_bytes = serialize_writer.written();
+        const full_length = @sizeOf(socket_packet.Descriptor.Type) + payload_bytes.len; // Descriptor byte + payload
+
+        var client_writer_buf: [4096]u8 = undefined;
+        var client_writer = self.sock.writer(&client_writer_buf);
+        const client_writer_interface = &client_writer.interface;
+        try client_writer_interface.writeInt(usize, @intCast(full_length), .big); // Length prefix
+        try client_writer_interface.writeInt(socket_packet.Descriptor.Type, descriptor_byte, .big); // Descriptor
+        try client_writer_interface.writeAll(payload_bytes); // s2s Payload
+    }
 };
 
 /// Runs until the client is disconnected. Reads incoming messages and calls `handleMessage`.
@@ -88,7 +107,7 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
 
     try client.sock.setReadTimeout(500 * 1000);
 
-    var buf: []u8 = try self.alloc.alloc(u8, 65535);
+    var buf = try self.alloc.alloc(u8, BYTE_LIMIT);
     defer self.alloc.free(buf);
 
     while (self.running.load(.monotonic)) {
@@ -112,10 +131,13 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
 
         if (bytes_read == 0) break;
 
-        const message = buf[0..bytes_read];
+        const full_message = buf[0..bytes_read];
+
+        const message_len = std.mem.readInt(usize, full_message[0..@sizeOf(usize)], .big) +
+            @sizeOf(socket_packet.Descriptor.Type);
 
         // handle current message
-        try self.handleMessage(client, message);
+        try self.handleMessage(client, full_message[@sizeOf(usize)..message_len]);
         std.Thread.sleep(self.settings.polling_rate * std.time.ns_per_ms);
     }
 
@@ -126,83 +148,30 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
 
 /// Continuously sends all necessary game info to `client`. Blocking.
 fn handleClientSend(self: *const Self, client: *const Client) !void {
-    loop: while (self.running.load(.monotonic) and client.open.load(.monotonic)) {
+    while (self.running.load(.monotonic) and client.open.load(.monotonic)) {
         // send necessary game info
         for (self.game_data.players.items) |p| {
             const player_packet = socket_packet.Player.init(p);
-            const player_string = std.json.Stringify.valueAlloc(
-                self.alloc,
-                player_packet,
-                .{},
-            ) catch |err| return commons.printErr(
-                err,
-                "Could not stringify packet: {}\n",
-                .{err},
-                .red,
-            );
-
-            defer self.alloc.free(player_string);
-
-            client.send(self.alloc, player_string) catch |err| switch (err) {
-                error.ConnectionResetByPeer, error.BrokenPipe => break :loop,
-                else => return err,
-            };
+            try client.serializeSend(self.alloc, player_packet);
         }
 
         std.Thread.sleep(self.settings.polling_rate * std.time.ns_per_ms);
     }
 }
 
-/// Parses the message and calls `processMessage`.
-fn handleMessage(self: *Self, client: *const Client, message: []u8) !void {
-    if (!self.running.load(.monotonic) or !client.open.load(.monotonic)) return;
+/// Deserializes a message and processes it
+fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) !void {
+    var stream = std.Io.Reader.fixed(message_bytes);
 
-    const message_parsed: std.json.Parsed(std.json.Value) = try std.json.parseFromSlice(
-        std.json.Value,
-        self.alloc,
-        message,
-        .{},
-    );
-    defer message_parsed.deinit();
+    const descriptor: socket_packet.Descriptor = @enumFromInt(try stream.takeByte());
+    var serializer_stream = std.Io.Reader.fixed(message_bytes[@sizeOf(socket_packet.Descriptor)..]);
 
-    const message_root = message_parsed.value;
-    switch (message_root) {
-        .object => |object| try self.processMessage(
-            client,
-            message_root,
-            try commons.getDescriptor(object, .client),
-        ),
-        else => return commons.printErr(
-            error.InvalidMessage,
-            "Received invalid message from server! JSON package must be an object.",
-            .{},
-            .yellow,
-        ),
-    }
-}
-
-/// Actually processes message and responds accordingly.
-fn processMessage(
-    self: *Self,
-    client: *const Client,
-    message_root: std.json.Value,
-    descriptor: socket_packet.Descriptor,
-) !void {
     switch (descriptor) {
         .client_connect => {
-            const request_parsed = try std.json.parseFromValue(
-                socket_packet.ClientConnect,
-                self.alloc,
-                message_root,
-                .{},
-            );
-            defer request_parsed.deinit();
-
-            self.appendPlayer(request_parsed.value) catch |err| switch (err) {
+            const client_connect = try s2s.deserializeAlloc(&serializer_stream, socket_packet.ClientConnect, self.alloc);
+            self.appendPlayer(client_connect) catch |err| switch (err) {
                 error.ServerFull => {
-                    const server_full = try std.json.Stringify.valueAlloc(self.alloc, socket_packet.ServerFull{}, .{});
-                    defer self.alloc.free(server_full);
-                    try client.send(self.alloc, server_full);
+                    try client.serializeSend(self.alloc, socket_packet.ServerFull{});
                     return;
                 },
                 else => return err,
@@ -210,30 +179,13 @@ fn processMessage(
 
             // Send map data to the client
             while (!self.game_data.map.network_chunks_ready.load(.monotonic)) {}
-            for (self.socket_packets.map_chunks) |c| {
-                const map_string = try std.json.Stringify.valueAlloc(self.alloc, c, .{});
-                defer self.alloc.free(map_string);
-
-                try client.send(self.alloc, map_string);
-            }
+            for (self.socket_packets.map_chunks) |c|
+                try client.serializeSend(self.alloc, c);
         },
-        .resend_request => {
-            const request_parsed = try std.json.parseFromValue(
-                socket_packet.ResendRequest,
-                self.alloc,
-                message_root,
-                .{},
-            );
-            defer request_parsed.deinit();
-
-            // const resend_request: socket_packet.ResendRequest = request_parsed.value;
-            @panic("unimplemented");
-        },
+        .resend_request => @panic("unimplemented"),
         .move_player => {
-            const request_parsed = try std.json.parseFromValue(socket_packet.MovePlayer, self.alloc, message_root, .{});
-            defer request_parsed.deinit();
-
-            self.game_data.players.items[client.id].position = request_parsed.value.new_pos;
+            const move_player = try s2s.deserializeAlloc(&serializer_stream, socket_packet.MovePlayer, self.alloc);
+            self.game_data.players.items[client.id].position = move_player.new_pos;
         },
         else => {
             commons.print("Illegal message received from client. Has descriptor {s}.\n", .{@tagName(descriptor)}, .yellow);

@@ -84,11 +84,10 @@ pub fn build(b: *std.Build) void {
 
     const commons_mod = modules.create("commons", "src/commons.zig").addImports(&.{socket_packet_mod});
 
-    const client_mod = modules.create("client", "src/client/Client.zig");
-    const server_mod = modules.create("server", "src/server/Server.zig");
+    const s2s_mod = modules.create("s2s", "lib/s2s.zig");
+    const client_mod = modules.create("client", "src/client/Client.zig").addImports(&.{ s2s_mod, network_mod });
+    const server_mod = modules.create("server", "src/server/Server.zig").addImports(&.{ s2s_mod, network_mod });
     socket_packet_mod.addImport(server_mod);
-
-    network_mod.importTo(&.{ client_mod, server_mod });
 
     const state_mod = modules.create("state", "src/client/state/State.zig");
 
@@ -115,8 +114,8 @@ pub fn build(b: *std.Build) void {
     socket_packet_mod.importTo(&.{
         server_mod,
         client_mod,
-        state_mod,
-        game_mod,
+        state_mod, // shouldn't have to be here. maybe refactor State.zig not to need socket_packet
+        game_mod, // same goes for game_mod
     });
 
     exe.root_module.addImport("game", game_mod.mod);
