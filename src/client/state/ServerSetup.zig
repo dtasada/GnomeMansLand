@@ -102,8 +102,8 @@ pub fn update(self: *Self, game: *Game) !void {
         &self.max_players_string_buf,
     });
     try self.button_set.update(.{
-        .{ State.hostServer, .{game} },
-        .{ State.openLobby, .{game} },
+        .{ State.hostServer, .{ &game.state, game } },
+        .{ State.openLobby, .{ &game.state, game } },
     });
 
     // bro do not touch this code this is so fragile bro. null termination sucks

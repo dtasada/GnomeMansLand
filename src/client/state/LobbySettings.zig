@@ -30,7 +30,7 @@ pub fn update(self: *const Self, game: *Game) !void {
     rl.clearBackground(.black);
 
     try self.buttons.update(.{
-        .{ State.openLobby, .{game} },
+        .{ State.openLobby, .{ &game.state, game } },
     });
 
     rl.endDrawing();

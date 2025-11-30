@@ -69,9 +69,9 @@ pub fn openSettings(self: *Self) void {
     self.type = .lobby_settings;
 }
 
-pub fn openLobby(game: *Game) void {
-    game.state.lobby.reinit(game.alloc) catch @panic("unimplemented");
-    game.state.type = .lobby;
+pub fn openLobby(self: *Self, game: *Game) void {
+    self.lobby.reinit(game.alloc) catch @panic("unimplemented");
+    self.type = .lobby;
 }
 
 pub fn clientSetup(self: *Self) void {
@@ -83,17 +83,17 @@ pub fn serverSetup(self: *Self) void {
 }
 
 /// Creates client and opens game normally.
-pub fn openGameRemote(game: *Game) !void {
-    if (game.state.lobby.nickname_input.len != 0) { // only if nickname isn't empty
-        try game.reinitClient(game.state.lobby.nickname_input.getBody());
-        game.state.type = .game;
+pub fn openGameRemote(self: *Self, game: *Game) !void {
+    if (self.lobby.nickname_input.len != 0) { // only if nickname isn't empty
+        try game.reinitClient(self.lobby.nickname_input.getBody());
+        self.type = .game;
     } else @panic("unimplemented");
 }
 
 /// Creates client and opens game, copying map data directly from local server
-pub fn openGameLocal(game: *Game) !void {
-    if (game.state.lobby.nickname_input.len != 0) { // only if nickname isn't empty
-        try game.reinitClient(game.state.lobby.nickname_input.getBody());
+pub fn openGameLocal(self: *Self, game: *Game) !void {
+    if (self.lobby.nickname_input.len != 0) { // only if nickname isn't empty
+        try game.reinitClient(self.lobby.nickname_input.getBody());
 
         // Perform the memory copy
         game.client.?.game_data.map = try Game.GameData.Map.initFromExisting(
@@ -101,20 +101,20 @@ pub fn openGameLocal(game: *Game) !void {
             game.server.?.game_data.map,
         );
 
-        game.state.type = .game;
+        self.type = .game;
     } else @panic("unimplemented");
 }
 
 /// (Re)initializes server. Starts a thread for `waitForServer`
-pub fn hostServer(game: *Game) !void {
+pub fn hostServer(self: *Self, game: *Game) !void {
     try game.reinitServer();
 
-    const t = try std.Thread.spawn(.{}, waitForServer, .{game});
+    const t = try std.Thread.spawn(.{}, waitForServer, .{ self, game });
     t.detach();
 }
 
 /// Waits for server to finish generating world, then opens the game locally.
-fn waitForServer(game: *Game) !void {
+fn waitForServer(self: *Self, game: *Game) !void {
     while (!game.server.?.game_data.map.finished_generating.load(.monotonic)) : (std.Thread.sleep(200 * std.time.ns_per_ms)) {}
-    try openGameLocal(game);
+    try self.openGameLocal(game);
 }
