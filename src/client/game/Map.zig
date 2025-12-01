@@ -111,7 +111,10 @@ inline fn calcAmountOfModels(size: commons.v2u) usize {
 
 pub fn addChunk(self: *Self, map_chunk: socket_packet.MapChunk) void {
     @memcpy(
-        self.height_map[map_chunk.float_start_index..map_chunk.float_end_index],
+        self.height_map[map_chunk.start_index..@min(
+            map_chunk.start_index + map_chunk.height_map.len,
+            self.height_map.len,
+        )],
         map_chunk.height_map,
     );
     self._height_map_filled += map_chunk.height_map.len;

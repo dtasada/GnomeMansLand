@@ -14,16 +14,17 @@ pub const Descriptor = enum(u8) {
     server_full,
     client_requests_connect,
     client_requests_move_player,
+    client_requests_map_data,
     resend_request,
     server_accepted_client,
 };
 
 /// Object identifying a new player.
-pub const ClientConnect = struct {
+pub const ClientRequestsConnect = struct {
     descriptor: Descriptor = .client_requests_connect,
     nickname: []const u8,
 
-    pub fn init(nickname: []const u8) ClientConnect {
+    pub fn init(nickname: []const u8) ClientRequestsConnect {
         return .{ .nickname = nickname };
     }
 };
@@ -45,9 +46,7 @@ pub const MapChunk = struct {
     /// identifies the index of the chunk.
     chunk_index: u32,
     /// identifies the index of the first float in the chunk relative to the full height map.
-    float_start_index: u32,
-    /// identifies the index of the last float in the chunk relative to the full height map.
-    float_end_index: u32,
+    start_index: u32,
     /// 2d vector containing the dimensions of the full height map.
     total_size: commons.v2u,
     /// actual floating point numbers of the chunk to be written into the JSON chunk.
@@ -55,19 +54,6 @@ pub const MapChunk = struct {
 
     /// Asynchronoulsy populates `map_chunks`
     pub fn init(
-        alloc: std.mem.Allocator,
-        server_map: *ServerGameData.Map,
-        map_chunks: []MapChunk,
-    ) !std.Thread {
-        return try std.Thread.spawn(.{}, genChunks, .{
-            alloc,
-            map_chunks,
-            server_map,
-        });
-    }
-
-    /// blocking. populates `map_chunks` in parallel.
-    fn genChunks(
         alloc: std.mem.Allocator,
         map_chunks: []MapChunk,
         server_map: *ServerGameData.Map,
@@ -91,14 +77,15 @@ pub const MapChunk = struct {
     /// Generates a single chunk of index `i`.
     fn genChunk(chunks: []MapChunk, server_map: *ServerGameData.Map, i: usize) void {
         const start_idx = i * FLOATS_PER_CHUNK;
-        const end_idx = @min(start_idx + FLOATS_PER_CHUNK, server_map.height_map.len);
 
         chunks[i] = .{
             .chunk_index = @intCast(i),
-            .float_start_index = @intCast(start_idx),
-            .float_end_index = @intCast(end_idx),
+            .start_index = @intCast(start_idx),
             .total_size = server_map.size,
-            .height_map = server_map.height_map[start_idx..end_idx],
+            .height_map = server_map.height_map[start_idx..@min(
+                start_idx + FLOATS_PER_CHUNK,
+                server_map.height_map.len,
+            )],
         };
 
         _ = server_map.network_chunks_generated.fetchAdd(1, .monotonic);
@@ -118,21 +105,21 @@ pub const ResendRequest = struct { // not in use atm but keeping it in for now j
 };
 
 /// Represents the player object in the client-server interface.
-pub const Player = struct {
+pub const PlayerState = struct {
     descriptor: Descriptor = .player_state,
     player: ServerGameData.Player,
 
-    pub fn init(player: ServerGameData.Player) Player {
+    pub fn init(player: ServerGameData.Player) PlayerState {
         return .{ .player = player };
     }
 };
 
 /// Requests the server to move a player to `new_pos`.
-pub const MovePlayer = struct {
+pub const ClientRequestsMovePlayer = struct {
     descriptor: Descriptor = .client_requests_move_player,
     new_pos: commons.v2f,
 
-    pub fn init(new_pos: commons.v2f) MovePlayer {
+    pub fn init(new_pos: commons.v2f) ClientRequestsMovePlayer {
         return .{ .new_pos = new_pos };
     }
 };
@@ -149,4 +136,8 @@ pub const ServerAcceptedClient = struct {
     pub fn init(map_size: commons.v2u) ServerAcceptedClient {
         return .{ .map_size = map_size };
     }
+};
+
+pub const ClientRequestsMapData = struct {
+    descriptor: Descriptor = .client_requests_map_data,
 };

@@ -180,6 +180,6 @@ pub fn initServer(self: *Self) !void {
 pub fn initClient(self: *Self, nickname: []const u8, server_map: ?*Server.GameData.Map) !void {
     if (self.client) |client| client.deinit(self.alloc);
 
-    const client_connect = socket_packet.ClientConnect.init(nickname);
+    const client_connect = socket_packet.ClientRequestsConnect.init(nickname);
     self.client = try Client.init(self.alloc, self.settings, client_connect, server_map);
 }

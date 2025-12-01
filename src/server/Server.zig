@@ -141,9 +141,9 @@ fn handleClientSend(self: *const Self, client: *const Client) !void {
     while (self.running.load(.monotonic) and client.open.load(.monotonic)) {
         // send necessary game info
         for (self.game_data.players.items) |p| {
-            const player_packet = socket_packet.Player.init(p);
+            const player_packet = socket_packet.PlayerState.init(p);
             client.send(self.alloc, player_packet) catch |err| {
-                commons.print("Failed to flush to client writer: {}\n", .{err}, .yellow);
+                commons.print("Failed to send message to client: {}\n", .{err}, .yellow);
                 return;
             };
         }
@@ -161,8 +161,8 @@ fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) 
 
     switch (descriptor) {
         .client_requests_connect => {
-            var client_connect = try s2s.deserializeAlloc(&serializer_stream, socket_packet.ClientConnect, self.alloc);
-            defer s2s.free(self.alloc, socket_packet.ClientConnect, &client_connect);
+            var client_connect = try s2s.deserializeAlloc(&serializer_stream, socket_packet.ClientRequestsConnect, self.alloc);
+            defer s2s.free(self.alloc, socket_packet.ClientRequestsConnect, &client_connect);
 
             self.appendPlayer(client_connect) catch |err| switch (err) {
                 error.ServerFull => {
@@ -178,19 +178,19 @@ fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) 
             };
 
             try client.send(self.alloc, socket_packet.ServerAcceptedClient.init(self.game_data.map.size));
-
-            // Send map data to the client
+        },
+        .client_requests_map_data => {
             while (!self.game_data.map.network_chunks_ready.load(.monotonic)) {}
             for (self.socket_packets.map_chunks) |c|
                 client.send(self.alloc, c) catch |err| {
-                    commons.print("Failed to flush to client writer: {}\n", .{err}, .yellow);
+                    commons.print("Failed to send message to client: {}\n", .{err}, .yellow);
                     return;
                 };
         },
         .resend_request => @panic("unimplemented"),
         .client_requests_move_player => {
-            var move_player = try s2s.deserializeAlloc(&serializer_stream, socket_packet.MovePlayer, self.alloc);
-            defer s2s.free(self.alloc, socket_packet.MovePlayer, &move_player);
+            var move_player = try s2s.deserializeAlloc(&serializer_stream, socket_packet.ClientRequestsMovePlayer, self.alloc);
+            defer s2s.free(self.alloc, socket_packet.ClientRequestsMovePlayer, &move_player);
             self.game_data.players.items[client.id].position = move_player.new_pos;
         },
         else => return commons.printErr(
@@ -207,12 +207,11 @@ fn prepareMapChunks(self: *Self) !void {
     while (!self.game_data.map.finished_generating.load(.monotonic)) : (std.Thread.sleep(100 * std.time.ns_per_ms)) {}
 
     // Now that the map is ready, generate the network chunks from it.
-    const chunk_gen_thread = try socket_packet.MapChunk.init(
+    try socket_packet.MapChunk.init(
         self.alloc,
-        self.game_data.map,
         self.socket_packets.map_chunks,
+        self.game_data.map,
     );
-    chunk_gen_thread.join();
 }
 
 /// `game_data` and `socket_packets.map_chunks` are populated asynchronously
@@ -237,12 +236,10 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     self.socket_packets = .{
         .map_chunks = try self.alloc.alloc(
             socket_packet.MapChunk,
-            @divFloor(
+            try std.math.divCeil(
+                usize,
                 self.game_data.map.height_map.len,
                 socket_packet.MapChunk.FLOATS_PER_CHUNK,
-            ) + @intFromBool(
-                self.game_data.map.height_map.len %
-                    socket_packet.MapChunk.FLOATS_PER_CHUNK != 0,
             ),
         ),
     };
@@ -333,7 +330,7 @@ fn listen(self: *Self) !void {
 }
 
 /// Appends a player to
-fn appendPlayer(self: *Self, connect_request: socket_packet.ClientConnect) !void {
+fn appendPlayer(self: *Self, connect_request: socket_packet.ClientRequestsConnect) !void {
     // we duplicate the nickname because `connect_request` gets cleaned up after appendPlayer is called
     // so we prevent use after free
     const nickname_dupe = try self.alloc.dupe(u8, connect_request.nickname);

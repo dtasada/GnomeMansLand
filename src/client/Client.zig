@@ -29,7 +29,7 @@ const BYTE_LIMIT: usize = 65535;
 pub fn init(
     alloc: std.mem.Allocator,
     settings: Settings,
-    connect_message: socket_packet.ClientConnect,
+    connect_message: socket_packet.ClientRequestsConnect,
     server_map: ?*ServerMap,
 ) !*Self {
     var self = try alloc.create(Self);
@@ -75,6 +75,7 @@ pub fn init(
             break :b .{ .no = accept.map_size };
         },
     );
+    try self.send(socket_packet.ClientRequestsMapData{});
 
     try self.sock.setReadTimeout(500 * 1000); // set 500 ms timeout for thread join
 
@@ -164,15 +165,15 @@ fn handleMessage(self: *Self, message_payload: []const u8) !void {
 
     switch (descriptor) {
         .player_state => {
-            var packet = try s2s.deserializeAlloc(&reader, socket_packet.Player, self.alloc);
-            defer s2s.free(self.alloc, socket_packet.Player, &packet);
-
-            const player = packet.player;
-            if (self.game_data.players.items.len <= @as(usize, player.id)) {
-                try self.game_data.players.append(self.alloc, player);
-            } else {
-                self.game_data.players.items[@intCast(player.id)] = player;
-            }
+            // var packet = try s2s.deserializeAlloc(&reader, socket_packet.Player, self.alloc);
+            // defer s2s.free(self.alloc, socket_packet.Player, &packet);
+            //
+            // const player = packet.player;
+            // if (self.game_data.players.items.len <= @as(usize, player.id)) {
+            //     try self.game_data.players.append(self.alloc, player);
+            // } else {
+            //     self.game_data.players.items[@intCast(player.id)] = player;
+            // }
         },
         .map_chunk => {
             // if we don't own the map, we're the host, so we don't need to download it
