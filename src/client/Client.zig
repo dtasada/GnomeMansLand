@@ -57,11 +57,10 @@ pub fn init(
         .polling_rate = settings.multiplayer.polling_rate,
         .game_data = undefined,
     };
-
+    errdefer self.game_data.deinit(self.alloc);
     errdefer self.running.store(false, .monotonic);
 
     self.listen_thread = try std.Thread.spawn(.{}, Self.listen, .{self});
-
     self.game_data = try GameData.init(
         self.alloc,
         if (server_map) |s| b: {
@@ -76,7 +75,6 @@ pub fn init(
             break :b .{ .no = accept.map_size };
         },
     );
-    errdefer self.game_data.deinit(self.alloc);
 
     try self.sock.setReadTimeout(500 * 1000); // set 500 ms timeout for thread join
 
@@ -161,6 +159,8 @@ fn handleMessage(self: *Self, message_payload: []const u8) !void {
 
     const descriptor_val = try reader.takeByte();
     const descriptor = std.meta.intToEnum(socket_packet.Descriptor, descriptor_val) catch return error.InvalidMessage;
+
+    if (self.wait_list.client_accepted == null and descriptor != .server_accepted_client) return;
 
     switch (descriptor) {
         .player_state => {
