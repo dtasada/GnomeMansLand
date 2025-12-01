@@ -44,8 +44,7 @@ pub fn handleKeys(in_game: *InGame, game: *Game) !void {
         if (rl.isMouseButtonPressed(.left)) {
             if (game.client) |client| {
                 if (getMouseToWorld(in_game, game)) |pos| {
-                    const move_player = socket_packet.ClientRequestsMovePlayer.init(.init(pos.x, pos.z));
-                    try client.send(move_player);
+                    try client.send(.{ .client_requests_move_player = .init(.init(pos.x, pos.y)) });
                 }
             }
         }

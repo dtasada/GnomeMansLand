@@ -64,18 +64,18 @@ pub fn init(
     self.game_data = try GameData.init(
         self.alloc,
         if (server_map) |s| b: {
-            try self.send(connect_message);
+            try self.send(.{ .client_requests_connect = connect_message });
             break :b .{ .yes = s };
         } else b: {
             const accept = try self.sendAndReceive(
-                connect_message,
+                .{ .client_requests_connect = connect_message },
                 socket_packet.ServerAcceptedClient,
                 &self.wait_list.client_accepted,
             );
             break :b .{ .no = accept.map_size };
         },
     );
-    try self.send(socket_packet.ClientRequestsMapData{});
+    try self.send(.client_requests_map_data);
 
     try self.sock.setReadTimeout(500 * 1000); // set 500 ms timeout for thread join
 
@@ -96,7 +96,7 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
 }
 
 /// Sends `message` to server, then waits until `wait` is not null. Then returns `wait` unwrapped. Blocking
-fn sendAndReceive(self: *Self, message: anytype, comptime T: type, wait: *?T) !T {
+fn sendAndReceive(self: *Self, message: socket_packet.Packet, comptime T: type, wait: *?T) !T {
     try self.send(message);
     while (wait.* == null) {}
     return wait.*.?;
@@ -156,14 +156,11 @@ fn listen(self: *Self) !void {
 
 /// Deserializes a message and processes it
 fn handleMessage(self: *Self, message_payload: []const u8) !void {
-    var reader = std.Io.Reader.fixed(message_payload);
+    var stream = std.Io.Reader.fixed(message_payload);
+    var packet = try s2s.deserializeAlloc(&stream, socket_packet.Packet, self.alloc);
+    defer s2s.free(self.alloc, socket_packet.Packet, &packet);
 
-    const descriptor_val = try reader.takeByte();
-    const descriptor = std.meta.intToEnum(socket_packet.Descriptor, descriptor_val) catch return error.InvalidMessage;
-
-    if (self.wait_list.client_accepted == null and descriptor != .server_accepted_client) return;
-
-    switch (descriptor) {
+    switch (packet) {
         .player_state => {
             // var packet = try s2s.deserializeAlloc(&reader, socket_packet.Player, self.alloc);
             // defer s2s.free(self.alloc, socket_packet.Player, &packet);
@@ -175,44 +172,33 @@ fn handleMessage(self: *Self, message_payload: []const u8) !void {
             //     self.game_data.players.items[@intCast(player.id)] = player;
             // }
         },
-        .map_chunk => {
+        .map_chunk => |map_chunk| {
             // if we don't own the map, we're the host, so we don't need to download it
             if (!self.game_data.map.owns_height_map) return;
-
-            var packet = try s2s.deserializeAlloc(&reader, socket_packet.MapChunk, self.alloc);
-            defer s2s.free(self.alloc, socket_packet.MapChunk, &packet);
-
-            self.game_data.map.addChunk(packet);
+            self.game_data.map.addChunk(map_chunk);
         },
         .server_full => @panic("unimplemented"),
-        .server_accepted_client => {
-            var packet = try s2s.deserializeAlloc(&reader, socket_packet.ServerAcceptedClient, self.alloc);
-            defer s2s.free(self.alloc, socket_packet.ServerAcceptedClient, &packet);
-            self.wait_list.client_accepted = packet;
+        .server_accepted_client => |accepted_client| {
+            self.wait_list.client_accepted = accepted_client;
         },
         else => commons.print(
             "Received message with illegal descriptor {s} received from server\n",
-            .{@tagName(descriptor)},
+            .{@tagName(std.meta.activeTag(packet))},
             .yellow,
         ),
     }
 }
 
-pub fn send(self: *const Self, object: anytype) !void {
+pub fn send(self: *const Self, object: socket_packet.Packet) !void {
     var serialize_writer = std.Io.Writer.Allocating.init(self.alloc);
     defer serialize_writer.deinit();
     try s2s.serialize(&serialize_writer.writer, @TypeOf(object), object);
 
-    const descriptor_byte: socket_packet.Descriptor.Type = @intFromEnum(object.descriptor);
-
     const payload_bytes = serialize_writer.written();
-    const full_length: u32 = @sizeOf(socket_packet.Descriptor.Type) +
-        @as(u32, @intCast(payload_bytes.len));
 
     var client_writer_buf: [4096]u8 = undefined;
     var client_writer = self.sock.writer(&client_writer_buf);
-    try client_writer.interface.writeInt(u32, full_length, .big);
-    try client_writer.interface.writeInt(socket_packet.Descriptor.Type, descriptor_byte, .big);
+    try client_writer.interface.writeInt(u32, @intCast(payload_bytes.len), .big);
     try client_writer.interface.writeAll(payload_bytes);
     try client_writer.interface.flush();
 }

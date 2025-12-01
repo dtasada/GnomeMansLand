@@ -6,31 +6,46 @@ const commons = @import("commons");
 const ServerGameData = @import("server").GameData;
 
 /// Identifies the different types of messages that can be sent and received.
-pub const Descriptor = enum(u8) {
-    pub const Type = std.meta.Tag(@This()); // returns the integer type of the enum
+pub const Packet = union(enum(Packet.TagType)) {
+    pub const Tag = std.meta.Tag(@This()); // returns the integer type of the enum
+    pub const TagType = u8;
 
-    player_state,
-    map_chunk,
+    /// Send to client when the server is full and has reached the maximum player limit.
     server_full,
-    client_requests_connect,
-    client_requests_move_player,
+    /// Request by a client to receive game map data
     client_requests_map_data,
-    resend_request,
-    server_accepted_client,
+
+    /// Object representing a world terrain chunk.
+    map_chunk: MapChunk,
+    /// Object identifying a new player.
+    client_requests_connect: ClientRequestsConnect,
+    /// Requests the server to move a player to `new_pos`.
+    client_requests_move_player: ClientRequestsMovePlayer,
+    /// Server sends feedback upon a `client_requests_connect`
+    server_accepted_client: ServerAcceptedClient,
+
+    /// Represents the player object in the client-server interface.
+    player_state: struct {
+        player: ServerGameData.Player,
+
+        pub fn init(player: ServerGameData.Player) @This() {
+            return .{ .player = player };
+        }
+    },
+
+    /// Request the server to send a message again.
+    resend_request: struct { // not in use atm but keeping it in for now just in case.
+        body: []const u8,
+
+        pub fn init(body: []const u8) @This() {
+            return .{ .body = body };
+        }
+    },
 };
 
-/// Object identifying a new player.
-pub const ClientRequestsConnect = struct {
-    descriptor: Descriptor = .client_requests_connect,
-    nickname: []const u8,
-
-    pub fn init(nickname: []const u8) ClientRequestsConnect {
-        return .{ .nickname = nickname };
-    }
-};
-
-/// Object representing a world terrain chunk.
 pub const MapChunk = struct {
+    const Self = @This();
+
     /// Constant: max length in bytes of a chunk.
     const MAX_SIZE_BYTES: usize = 1024;
     /// Constant: the length in bytes of a floating point number in JSON.
@@ -42,7 +57,6 @@ pub const MapChunk = struct {
     /// Constant: amount of floating point values that can fit in a chunk.
     pub const FLOATS_PER_CHUNK = @divFloor(AVAILABLE_BYTES_FOR_DATA, JSON_FLOAT_SIZE);
 
-    descriptor: Descriptor = .map_chunk,
     /// identifies the index of the chunk.
     chunk_index: u32,
     /// identifies the index of the first float in the chunk relative to the full height map.
@@ -55,7 +69,7 @@ pub const MapChunk = struct {
     /// Asynchronoulsy populates `map_chunks`
     pub fn init(
         alloc: std.mem.Allocator,
-        map_chunks: []MapChunk,
+        map_chunks: []Self,
         server_map: *ServerGameData.Map,
     ) !void {
         var pool: std.Thread.Pool = undefined;
@@ -75,7 +89,7 @@ pub const MapChunk = struct {
     }
 
     /// Generates a single chunk of index `i`.
-    fn genChunk(chunks: []MapChunk, server_map: *ServerGameData.Map, i: usize) void {
+    fn genChunk(chunks: []Self, server_map: *ServerGameData.Map, i: usize) void {
         const start_idx = i * FLOATS_PER_CHUNK;
 
         chunks[i] = .{
@@ -94,50 +108,26 @@ pub const MapChunk = struct {
     }
 };
 
-/// Request the server to send a message again.
-pub const ResendRequest = struct { // not in use atm but keeping it in for now just in case.
-    descriptor: Descriptor = .resend_request,
-    body: []const u8,
+pub const ClientRequestsConnect = struct {
+    nickname: []const u8,
 
-    pub fn init(body: []const u8) ResendRequest {
-        return .{ .body = body };
+    pub fn init(nickname: []const u8) @This() {
+        return .{ .nickname = nickname };
     }
-};
-
-/// Represents the player object in the client-server interface.
-pub const PlayerState = struct {
-    descriptor: Descriptor = .player_state,
-    player: ServerGameData.Player,
-
-    pub fn init(player: ServerGameData.Player) PlayerState {
-        return .{ .player = player };
-    }
-};
-
-/// Requests the server to move a player to `new_pos`.
-pub const ClientRequestsMovePlayer = struct {
-    descriptor: Descriptor = .client_requests_move_player,
-    new_pos: commons.v2f,
-
-    pub fn init(new_pos: commons.v2f) ClientRequestsMovePlayer {
-        return .{ .new_pos = new_pos };
-    }
-};
-
-/// Send to client when the server is full and has reached the maximum player limit.
-pub const ServerFull = struct {
-    descriptor: Descriptor = .server_full,
 };
 
 pub const ServerAcceptedClient = struct {
-    descriptor: Descriptor = .server_accepted_client,
     map_size: commons.v2u,
 
-    pub fn init(map_size: commons.v2u) ServerAcceptedClient {
+    pub fn init(map_size: commons.v2u) @This() {
         return .{ .map_size = map_size };
     }
 };
 
-pub const ClientRequestsMapData = struct {
-    descriptor: Descriptor = .client_requests_map_data,
+pub const ClientRequestsMovePlayer = struct {
+    new_pos: commons.v2f,
+
+    pub fn init(new_pos: commons.v2f) @This() {
+        return .{ .new_pos = new_pos };
+    }
 };

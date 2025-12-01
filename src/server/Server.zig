@@ -59,21 +59,16 @@ const Client = struct {
     /// Atomic boolean identifying whether the client is running or not
     open: std.atomic.Value(bool),
 
-    pub fn send(self: *const Client, alloc: std.mem.Allocator, object: anytype) !void {
+    pub fn send(self: *const Client, alloc: std.mem.Allocator, object: socket_packet.Packet) !void {
         var serialize_writer = std.Io.Writer.Allocating.init(alloc);
         defer serialize_writer.deinit();
         try s2s.serialize(&serialize_writer.writer, @TypeOf(object), object);
 
-        const descriptor_byte: socket_packet.Descriptor.Type = @intFromEnum(object.descriptor);
-
         const payload_bytes = serialize_writer.written();
-        const full_length: u32 = @sizeOf(socket_packet.Descriptor.Type) +
-            @as(u32, @intCast(payload_bytes.len));
 
         var client_writer_buf: [4096]u8 = undefined;
         var client_writer = self.sock.writer(&client_writer_buf);
-        try client_writer.interface.writeInt(u32, full_length, .big);
-        try client_writer.interface.writeInt(socket_packet.Descriptor.Type, descriptor_byte, .big);
+        try client_writer.interface.writeInt(u32, @intCast(payload_bytes.len), .big);
         try client_writer.interface.writeAll(payload_bytes);
         try client_writer.interface.flush();
     }
@@ -141,8 +136,7 @@ fn handleClientSend(self: *const Self, client: *const Client) !void {
     while (self.running.load(.monotonic) and client.open.load(.monotonic)) {
         // send necessary game info
         for (self.game_data.players.items) |p| {
-            const player_packet = socket_packet.PlayerState.init(p);
-            client.send(self.alloc, player_packet) catch |err| {
+            client.send(self.alloc, .{ .player_state = .init(p) }) catch |err| {
                 commons.print("Failed to send message to client: {}\n", .{err}, .yellow);
                 return;
             };
@@ -155,15 +149,11 @@ fn handleClientSend(self: *const Self, client: *const Client) !void {
 /// Deserializes a message and processes it
 fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) !void {
     var stream = std.Io.Reader.fixed(message_bytes);
+    var packet = try s2s.deserializeAlloc(&stream, socket_packet.Packet, self.alloc);
+    defer s2s.free(self.alloc, socket_packet.Packet, &packet);
 
-    const descriptor: socket_packet.Descriptor = @enumFromInt(try stream.takeByte());
-    var serializer_stream = std.Io.Reader.fixed(message_bytes[@sizeOf(socket_packet.Descriptor)..]);
-
-    switch (descriptor) {
-        .client_requests_connect => {
-            var client_connect = try s2s.deserializeAlloc(&serializer_stream, socket_packet.ClientRequestsConnect, self.alloc);
-            defer s2s.free(self.alloc, socket_packet.ClientRequestsConnect, &client_connect);
-
+    switch (packet) {
+        .client_requests_connect => |client_connect| {
             self.appendPlayer(client_connect) catch |err| switch (err) {
                 error.ServerFull => {
                     commons.print(
@@ -171,32 +161,30 @@ fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) 
                         .{ try client.sock.getRemoteEndPoint(), self.game_data.players.items.len, self.game_data.players.capacity },
                         .yellow,
                     );
-                    try client.send(self.alloc, socket_packet.ServerFull{});
+                    try client.send(self.alloc, .server_full);
                     return;
                 },
                 else => return err,
             };
 
-            try client.send(self.alloc, socket_packet.ServerAcceptedClient.init(self.game_data.map.size));
+            try client.send(self.alloc, .{ .server_accepted_client = .init(self.game_data.map.size) });
         },
         .client_requests_map_data => {
             while (!self.game_data.map.network_chunks_ready.load(.monotonic)) {}
             for (self.socket_packets.map_chunks) |c|
-                client.send(self.alloc, c) catch |err| {
+                client.send(self.alloc, .{ .map_chunk = c }) catch |err| {
                     commons.print("Failed to send message to client: {}\n", .{err}, .yellow);
                     return;
                 };
         },
         .resend_request => @panic("unimplemented"),
-        .client_requests_move_player => {
-            var move_player = try s2s.deserializeAlloc(&serializer_stream, socket_packet.ClientRequestsMovePlayer, self.alloc);
-            defer s2s.free(self.alloc, socket_packet.ClientRequestsMovePlayer, &move_player);
+        .client_requests_move_player => |move_player| {
             self.game_data.players.items[client.id].position = move_player.new_pos;
         },
         else => return commons.printErr(
             error.IllegalMessage,
             "Illegal message received from client. Has descriptor {s}.\n",
-            .{@tagName(descriptor)},
+            .{@tagName(std.meta.activeTag(packet))},
             .yellow,
         ),
     }
