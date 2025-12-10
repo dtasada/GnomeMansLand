@@ -6,8 +6,8 @@
 
     .dependencies = .{
         .raylib_zig = .{
-            .url = "git+https://github.com/raylib-zig/raylib-zig?ref=devel#df70c5c952f61f84a39cd2af5649f5ad7a645b6f",
-            .hash = "raylib_zig-5.6.0-dev-KE8REH9ABQBo9v5YfUwPYdgihp7NNFOr_2FJOiVJH7bH",
+            .url = "git+https://github.com/raylib-zig/raylib-zig?ref=devel#a4d18b2d1cf8fdddec68b5b084535fca0475f466",
+            .hash = "raylib_zig-5.6.0-dev-KE8REL5MBQAf3p497t52Xw9P7ojndIkVOWPXnLiLLw2P",
         },
         .network = .{
             .url = "https://github.com/MasterQ32/zig-network/archive/92cd82679d0fc065cbbdb6c446b9e561a75a44a6.tar.gz",
@@ -16,6 +16,10 @@
         .s2s = .{
             .url = "https://github.com/ziglibs/s2s/archive/a51f347ae5e01ad634cf736e054cf348d90c4f04.tar.gz",
             .hash = "s2s-0.0.1-qt8ajd57AAA--HKwcpRdTd5Gr2anqqceKchvLmkSTywh",
+        },
+        .emsdk = .{
+            .url = "git+https://github.com/emscripten-core/emsdk?ref=4.0.9#3bcf1dcd01f040f370e10fe673a092d9ed79ebb5",
+            .hash = "N-V-__8AAJl1DwBezhYo_VE6f53mPVm00R-Fk28NPW7P14EQ",
         },
     },
     .paths = .{

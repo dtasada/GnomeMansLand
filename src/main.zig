@@ -10,7 +10,6 @@ pub fn main() !void {
     // Create allocator for game object
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
-
     const alloc = gpa.allocator();
 
     // Create game object
