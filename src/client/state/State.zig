@@ -34,6 +34,10 @@ server_setup: ServerSetup,
 in_game: InGame,
 alloc: std.mem.Allocator,
 
+threaded: std.Io.Threaded,
+
+wait_for_server: ?std.Io.Future(void),
+
 /// Initializes all states and defaults to Lobby.
 pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
     return .{
@@ -44,6 +48,8 @@ pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
         .client_setup = try ClientSetup.init(alloc, settings),
         .in_game = try InGame.init(alloc),
         .alloc = alloc,
+        .threaded = .init(alloc),
+        .wait_for_server = null,
     };
 }
 
@@ -54,6 +60,10 @@ pub fn deinit(self: *Self) void {
     self.lobby.deinit(self.alloc);
     self.lobby_settings.deinit(self.alloc);
     self.in_game.deinit(self.alloc);
+
+    if (self.wait_for_server) |*f| f.cancel(self.threaded.io());
+
+    self.threaded.deinit();
 }
 
 /// Updates the current active state.
@@ -104,15 +114,21 @@ pub fn openGame(self: *Self, game: *Game) !void {
 pub fn hostServer(self: *Self, game: *Game) !void {
     try game.initServer();
 
-    const t = try std.Thread.spawn(.{}, waitForServer, .{ self, game });
-    t.detach();
+    self.wait_for_server = self.threaded.io().async(waitForServer, .{ self, game });
 }
 
 /// Waits for server to finish generating world, then opens the game locally.
-fn waitForServer(self: *Self, game: *Game) !void {
+fn waitForServer(self: *Self, game: *Game) void {
     const server = game.server.?;
     while (!server.mapFinishedGenerating() or !server.mapChunksReady())
-        try game.server.?.threaded.io().sleep(.fromMilliseconds(200), .awake);
+        commons.sleep(self.threaded.io(), 200);
 
-    try self.openGame(game);
+    self.openGame(game) catch |err| {
+        commons.print(
+            "Couldn't initialize game client: {}\n",
+            .{err},
+            .red,
+        );
+        return;
+    };
 }

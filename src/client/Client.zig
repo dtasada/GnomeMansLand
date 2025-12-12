@@ -16,7 +16,7 @@ const Self = @This();
 
 alloc: std.mem.Allocator,
 sock: network.Socket,
-listen_thread: std.Thread,
+listen_handler: std.Io.Future(anyerror!void),
 game_data: GameData,
 wait_list: struct {
     client_accepted: ?socket_packet.ServerAcceptedClient = null,
@@ -53,7 +53,7 @@ pub fn init(
             .{ settings.multiplayer.server_host, settings.multiplayer.server_port, err },
             .red,
         ),
-        .listen_thread = undefined,
+        .listen_handler = undefined,
         .running = .init(true),
         .polling_rate = settings.multiplayer.polling_rate,
         .game_data = undefined,
@@ -62,7 +62,7 @@ pub fn init(
     errdefer self.game_data.deinit(self.alloc);
     errdefer self.running.store(false, .monotonic);
 
-    self.listen_thread = try std.Thread.spawn(.{}, Self.listen, .{self});
+    self.listen_handler = self.threaded.io().async(listen, .{self});
     self.game_data = try GameData.init(
         self.alloc,
         if (server_map) |s| b: {
@@ -80,15 +80,19 @@ pub fn init(
 
     if (server_map == null) try self.send(.client_requests_map_data);
 
-    try self.sock.setReadTimeout(500 * 1000); // set 500 ms timeout for thread join
-
     return self;
 }
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     self.running.store(false, .monotonic);
 
-    self.listen_thread.join();
+    self.listen_handler.cancel(self.threaded.io()) catch |err|
+        commons.print(
+            "Client: Error canceling listen handler: {}\n",
+            .{err},
+            .yellow,
+        );
+
     self.sock.close();
 
     self.game_data.deinit(self.alloc);
@@ -108,7 +112,7 @@ fn sendAndReceive(self: *Self, message: socket_packet.Packet, comptime T: type, 
 }
 
 /// Meant to run as a thread. Listens for new messages and calls `handleMessage` upon receiving one.
-fn listen(self: *Self) !void {
+fn listen(self: *Self) anyerror!void {
     var pending_data = try std.ArrayList(u8).initCapacity(self.alloc, BYTE_LIMIT);
     defer pending_data.deinit(self.alloc);
 
@@ -117,12 +121,10 @@ fn listen(self: *Self) !void {
     var message_len: u32 = 0;
     var reading_len = true;
 
+    const io = self.threaded.io();
     while (self.running.load(.monotonic)) {
-        const bytes_read = self.sock.receive(&read_buffer) catch |err| switch (err) {
-            error.WouldBlock => {
-                try self.threaded.io().sleep(.fromMilliseconds(20), .awake);
-                continue;
-            },
+        var reading = io.async(network.Socket.receive, .{ self.sock, &read_buffer });
+        const bytes_read = reading.await(io) catch |err| switch (err) {
             error.ConnectionResetByPeer => {
                 self.running.store(false, .monotonic);
                 commons.print("Socket disconnected\n", .{}, .blue);

@@ -49,11 +49,11 @@ const Client = struct {
     /// The actual client socket object.
     sock: network.Socket,
 
-    /// Thread that runs `handleClientReceive`
+    /// Async handle that runs `handleClientReceive`
     receive_handler: std.Io.Future(anyerror!void),
 
-    /// Thread that runs `handleClientSend`
-    thread_handle_send: std.Thread,
+    /// Async handle runs `handleClientSend`
+    send_handler: std.Io.Future(void),
 
     /// Internal identifier for a client object
     id: u32,
@@ -78,9 +78,10 @@ const Client = struct {
 
 /// Runs until the client is disconnected. Reads incoming messages and calls `handleMessage`.
 fn handleClientReceive(self: *Self, client: *Client) anyerror!void {
+    const io = self.threaded.io();
+
     defer {
         client.open.store(false, .monotonic);
-        client.thread_handle_send.join();
         client.sock.close();
     }
 
@@ -92,7 +93,6 @@ fn handleClientReceive(self: *Self, client: *Client) anyerror!void {
     var message_len: u32 = 0;
     var reading_len = true;
 
-    const io = self.threaded.io();
     while (self.running.load(.monotonic)) {
         var reading = io.async(network.Socket.receive, .{ client.sock, &read_buffer });
         const bytes_read = reading.await(io) catch |err| switch (err) {
@@ -130,7 +130,7 @@ fn handleClientReceive(self: *Self, client: *Client) anyerror!void {
 }
 
 /// Continuously sends all necessary game info to `client`. Blocking.
-fn handleClientSend(self: *Self, client: *const Client) !void {
+fn handleClientSend(self: *Self, client: *const Client) void {
     while (self.running.load(.monotonic) and client.open.load(.monotonic)) {
         // send necessary game info
         for (self.game_data.players.items) |p| {
@@ -140,7 +140,7 @@ fn handleClientSend(self: *Self, client: *const Client) !void {
             };
         }
 
-        try self.threaded.io().sleep(.fromMilliseconds(self.settings.polling_rate), .awake);
+        commons.sleep(self.threaded.io(), self.settings.polling_rate);
     }
 }
 
@@ -191,7 +191,7 @@ fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) 
 
 fn prepareMapChunks(self: *Self) !void {
     // Wait for the main map to finish generating
-    while (!self.mapFinishedGenerating()) : (try self.threaded.io().sleep(.fromMilliseconds(100), .awake)) {}
+    while (!self.mapFinishedGenerating()) : (commons.sleep(self.threaded.io(), 100)) {}
 
     // Now that the map is ready, generate the network chunks from it.
     try socket_packet.MapChunk.init(
@@ -234,7 +234,7 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     };
     errdefer self.alloc.free(self.socket_packets.map_chunks);
 
-    (try std.Thread.spawn(.{}, Self.prepareMapChunks, .{self})).detach();
+    (try std.Thread.spawn(.{}, prepareMapChunks, .{self})).detach();
 
     try network.init();
     errdefer network.deinit();
@@ -274,6 +274,7 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
                 .{err},
                 .red,
             );
+        client.send_handler.cancel(self.threaded.io());
         self.alloc.destroy(client);
     }
 
@@ -306,13 +307,23 @@ fn listen(self: *Self) !void {
         client.* = .{
             .sock = sock,
             .receive_handler = undefined,
-            .thread_handle_send = undefined,
+            .send_handler = undefined,
             .id = @intCast(self.clients.items.len),
             .open = .init(true),
         };
-        // client.thread_handle_receive = try std.Thread.spawn(.{}, handleClientReceive, .{ self, client });
-        client.receive_handler = self.threaded.io().async(handleClientReceive, .{ self, client });
-        client.thread_handle_send = try std.Thread.spawn(.{}, handleClientSend, .{ self, client });
+
+        const io = self.threaded.io();
+
+        client.receive_handler = io.async(handleClientReceive, .{ self, client });
+        errdefer client.receive_handler.cancel(self.threaded.io()) catch |err|
+            commons.print(
+                "Server error: Could not cancel client receiving handler: {}\n",
+                .{err},
+                .red,
+            );
+
+        client.send_handler = io.async(handleClientSend, .{ self, client });
+        errdefer client.send_handler.cancel(io);
 
         try self.clients.append(self.alloc, client);
 
