@@ -53,7 +53,7 @@ pub inline fn printErr(
 pub const ServerSettings = struct {
     max_players: u32,
     port: u16,
-    polling_rate: u64,
+    polling_rate: i64,
 
     world_generation: struct {
         resolution: [2]u32,

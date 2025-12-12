@@ -110,6 +110,6 @@ pub fn hostServer(self: *Self, game: *Game) !void {
 
 /// Waits for server to finish generating world, then opens the game locally.
 fn waitForServer(self: *Self, game: *Game) !void {
-    while (!game.server.?.game_data.map.finished_generating.load(.monotonic)) : (std.Thread.sleep(200 * std.time.ns_per_ms)) {}
+    while (!game.server.?.game_data.map.finished_generating.load(.monotonic)) : (try game.server.?.threaded.io().sleep(.fromMilliseconds(200), .awake)) {}
     try self.openGame(game);
 }

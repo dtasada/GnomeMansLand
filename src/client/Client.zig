@@ -23,6 +23,7 @@ wait_list: struct {
 },
 running: std.atomic.Value(bool),
 polling_rate: u64,
+threaded: std.Io.Threaded,
 
 const BYTE_LIMIT: usize = 65535;
 
@@ -56,6 +57,7 @@ pub fn init(
         .running = .init(true),
         .polling_rate = settings.multiplayer.polling_rate,
         .game_data = undefined,
+        .threaded = .init(alloc),
     };
     errdefer self.game_data.deinit(self.alloc);
     errdefer self.running.store(false, .monotonic);
@@ -115,7 +117,7 @@ fn listen(self: *Self) !void {
     while (self.running.load(.monotonic)) {
         const bytes_read = self.sock.receive(&read_buffer) catch |err| switch (err) {
             error.WouldBlock => {
-                std.Thread.sleep(10); // Sleep briefly if no data
+                try self.threaded.io().sleep(.fromMilliseconds(20), .awake);
                 continue;
             },
             error.ConnectionResetByPeer => {

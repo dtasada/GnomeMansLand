@@ -42,6 +42,8 @@ running: std.atomic.Value(bool),
 /// Thread that runs `listen`
 listen_thread: std.Thread,
 
+threaded: std.Io.Threaded,
+
 /// Wrapper around a single client construct.
 const Client = struct {
     /// The actual client socket object.
@@ -95,7 +97,7 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
     while (self.running.load(.monotonic)) {
         const bytes_read = client.sock.receive(&read_buffer) catch |err| switch (err) {
             error.WouldBlock => {
-                std.Thread.sleep(10); // Sleep briefly if no data
+                try self.threaded.io().sleep(.fromMilliseconds(10), .awake); // Sleep briefly if no data
                 continue;
             },
             error.ConnectionResetByPeer => break, // Client disconnected
@@ -132,7 +134,7 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
 }
 
 /// Continuously sends all necessary game info to `client`. Blocking.
-fn handleClientSend(self: *const Self, client: *const Client) !void {
+fn handleClientSend(self: *Self, client: *const Client) !void {
     while (self.running.load(.monotonic) and client.open.load(.monotonic)) {
         // send necessary game info
         for (self.game_data.players.items) |p| {
@@ -142,7 +144,7 @@ fn handleClientSend(self: *const Self, client: *const Client) !void {
             };
         }
 
-        std.Thread.sleep(self.settings.polling_rate * std.time.ns_per_ms);
+        try self.threaded.io().sleep(.fromMilliseconds(self.settings.polling_rate), .awake);
     }
 }
 
@@ -192,7 +194,7 @@ fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) 
 
 fn prepareMapChunks(self: *Self) !void {
     // Wait for the main map to finish generating
-    while (!self.game_data.map.finished_generating.load(.monotonic)) : (std.Thread.sleep(100 * std.time.ns_per_ms)) {}
+    while (!self.game_data.map.finished_generating.load(.monotonic)) : (try self.threaded.io().sleep(.fromMilliseconds(100), .awake)) {}
 
     // Now that the map is ready, generate the network chunks from it.
     try socket_packet.MapChunk.init(

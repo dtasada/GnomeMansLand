@@ -290,12 +290,12 @@ pub const TextBox = struct {
     inner_text: TextVariable,
     max_len: usize,
     focused: bool,
-    last_backspaced: ?i64,
+    last_backspaced: ?std.time.Instant,
     backspace_fast: bool,
     anim_bar_len: f32,
 
     cursor_pos: usize, // position of caret in [0..len]
-    cursor_last_blink: i64, // last time caret blink toggled
+    cursor_last_blink: std.time.Instant, // last time caret blink toggled
     cursor_visible: bool, // current visible state of caret
 
     pub fn init(alloc: std.mem.Allocator, settings: struct {
@@ -340,7 +340,7 @@ pub const TextBox = struct {
 
             // initialize new cursor fields
             .cursor_pos = settings.default_body.len,
-            .cursor_last_blink = std.time.milliTimestamp(),
+            .cursor_last_blink = try .now(),
             .cursor_visible = true,
         };
     }
@@ -397,19 +397,19 @@ pub const TextBox = struct {
                 self.cursor_pos += 1;
                 // reset blink so caret is visible right after move
                 self.cursor_visible = true;
-                self.cursor_last_blink = std.time.milliTimestamp();
+                self.cursor_last_blink = try .now();
             }
 
             if (rl.isKeyPressed(.left) and self.cursor_pos > 0) {
                 self.cursor_pos -= 1;
                 self.cursor_visible = true;
-                self.cursor_last_blink = std.time.milliTimestamp();
+                self.cursor_last_blink = try .now();
             }
 
             if (rl.isKeyDown(.backspace) and self.getBody().len > 0) {
                 if (self.last_backspaced) |t| {
-                    const now = std.time.milliTimestamp();
-                    if (now - t > 500 or self.backspace_fast and now - t > 50) {
+                    const now = try std.time.Instant.now();
+                    if (now.since(t) > 500 * std.time.ns_per_ms or self.backspace_fast and now.since(t) > 50 * std.time.ns_per_ms) {
                         self.last_backspaced = now;
                         // if cursor is at > 0, remove the char before cursor
                         if (self.cursor_pos > 0) {
@@ -419,7 +419,7 @@ pub const TextBox = struct {
                         }
                     }
                 } else {
-                    self.last_backspaced = std.time.milliTimestamp();
+                    self.last_backspaced = try .now();
                     if (self.cursor_pos > 0) {
                         _ = self.inner_text.body.orderedRemove(self.cursor_pos - 1);
                         self.cursor_pos -= 1;
@@ -438,7 +438,7 @@ pub const TextBox = struct {
 
                     // reset blink so caret appears immediately
                     self.cursor_visible = true;
-                    self.cursor_last_blink = std.time.milliTimestamp();
+                    self.cursor_last_blink = try .now();
                 }
             }
         } else {
@@ -451,8 +451,8 @@ pub const TextBox = struct {
         self.inner_text.update();
 
         // caret blinking and drawing
-        const now = std.time.milliTimestamp();
-        if (now - self.cursor_last_blink > 500) {
+        const now = try std.time.Instant.now();
+        if (now.since(self.cursor_last_blink) > 500 * std.time.ns_per_ms) {
             self.cursor_visible = !self.cursor_visible;
             self.cursor_last_blink = now;
         }

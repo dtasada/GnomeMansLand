@@ -149,7 +149,7 @@ fn setupRaylib(settings: Settings) void {
 
 /// parses settings from "./settings.json"
 fn parseSettings(alloc: std.mem.Allocator) !std.json.Parsed(Settings) {
-    const file = try std.fs.cwd().readFileAlloc(alloc, "./settings.json", 4096);
+    const file = try std.fs.cwd().readFileAlloc("./settings.json", alloc, .unlimited);
     defer alloc.free(file);
 
     return std.json.parseFromSlice(Settings, alloc, file, .{});
