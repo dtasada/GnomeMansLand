@@ -583,6 +583,13 @@ pub fn getHeight(self: *const Self, x: usize, y: usize) f32 {
             "Height query out of bounds: ({}, {}) >= ({}, {})",
             .{ x, y, self.size.x, self.size.y },
             .yellow,
+        )
+    else if (x < 0 or y < 0)
+        return commons.printErr(
+            0.0, // return default value of 0.0
+            "Height query out of bounds: ({}, {}) < (0, 0)",
+            .{ x, y },
+            .yellow,
         );
 
     return self.height_map[y * self.size.x + x];

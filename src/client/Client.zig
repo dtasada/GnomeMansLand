@@ -161,16 +161,13 @@ fn handleMessage(self: *Self, message_payload: []const u8) !void {
     defer s2s.free(self.alloc, socket_packet.Packet, &packet);
 
     switch (packet) {
-        .player_state => {
-            // var packet = try s2s.deserializeAlloc(&reader, socket_packet.Player, self.alloc);
-            // defer s2s.free(self.alloc, socket_packet.Player, &packet);
-            //
-            // const player = packet.player;
-            // if (self.game_data.players.items.len <= @as(usize, player.id)) {
-            //     try self.game_data.players.append(self.alloc, player);
-            // } else {
-            //     self.game_data.players.items[@intCast(player.id)] = player;
-            // }
+        .player_state => |player_state| {
+            const player = player_state.player;
+            if (self.game_data.players.items.len <= @as(usize, player.id)) {
+                try self.game_data.players.append(self.alloc, player);
+            } else {
+                self.game_data.players.items[@intCast(player.id)] = player;
+            }
         },
         .map_chunk => |map_chunk| {
             // if we don't own the map, we're the host, so we don't need to download it

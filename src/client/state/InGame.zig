@@ -140,6 +140,7 @@ pub fn update(self: *Self, game: *Game) !void {
         // Draw players
         for (client.game_data.players.items) |player| {
             if (player.position) |pos| {
+                std.debug.print("receive position: {f}\n", .{pos});
                 rl.drawCube(rl.Vector3.init(
                     pos.x,
                     client.game_data.map.getHeight(@intFromFloat(pos.x), @intFromFloat(pos.y)),

@@ -72,7 +72,10 @@ pub fn openSettings(self: *Self) void {
 }
 
 pub fn openLobby(self: *Self) void {
-    self.lobby.reinit(self.alloc) catch @panic("unimplemented");
+    self.lobby.reinit(self.alloc) catch |err| {
+        commons.print("Could not reinitalize lobby: {}\n", .{err}, .red);
+        return;
+    };
     self.type = .lobby;
 }
 
