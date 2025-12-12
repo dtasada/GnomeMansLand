@@ -12,26 +12,25 @@ const State = @import("State.zig");
 
 const Self = @This();
 
-nickname_input_label: ui.Text,
 nickname_input: ui.TextBox,
 buttons: ui.ButtonSet,
 title_text: ui.Text,
 
-pub fn init(alloc: std.mem.Allocator) !Self {
+pub fn init(
+    alloc: std.mem.Allocator,
+    settings: struct {
+        nickname_input_body: []const u8 = "",
+    },
+) !Self {
     const width: f32 = @floatFromInt(rl.getScreenWidth());
     const height: f32 = @floatFromInt(rl.getScreenHeight());
 
-    const nickname_input_label = try ui.Text.init(.{
-        .body = "nickname: ",
-        .x = width / 2.0 - 120.0,
-        .y = height - 240.0,
-    });
-
     return .{
-        .nickname_input_label = nickname_input_label,
         .nickname_input = try ui.TextBox.init(alloc, .{
-            .x = ui.getRight(nickname_input_label.hitbox) + 16.0,
-            .y = nickname_input_label.y,
+            .x = width / 2.0 - 160.0,
+            .y = height - 240.0,
+            .default_body = settings.nickname_input_body,
+            .label = "nickname: ",
         }),
         .buttons = try ui.ButtonSet.initGeneric(
             alloc,
@@ -52,15 +51,18 @@ pub fn init(alloc: std.mem.Allocator) !Self {
     };
 }
 
-pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
+pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     self.nickname_input.deinit(alloc);
     self.buttons.deinit(alloc);
 }
 
 /// Deinits and reinitializes Lobby. used when resizing window.
 pub fn reinit(self: *Self, alloc: std.mem.Allocator) !void {
+    const nickname_save = try alloc.dupe(u8, self.nickname_input.getBody());
+    defer alloc.free(nickname_save);
+
     self.deinit(alloc);
-    self.* = try init(alloc);
+    self.* = try init(alloc, .{ .nickname_input_body = nickname_save });
 }
 
 pub fn update(self: *Self, game: *Game) !void {
@@ -77,7 +79,6 @@ pub fn update(self: *Self, game: *Game) !void {
 
     self.title_text.update();
 
-    self.nickname_input_label.update();
     try self.nickname_input.update();
 
     rl.endDrawing();

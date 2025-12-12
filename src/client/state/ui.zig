@@ -4,6 +4,7 @@ const std = @import("std");
 const commons = @import("commons");
 
 const MAX_LEN: usize = 64;
+const MAX_LEN_0: usize = MAX_LEN + 1;
 
 const FontSize = enum(i32) {
     title = 96,
@@ -27,9 +28,7 @@ pub inline fn getRight(hitbox: rl.Rectangle) f32 {
 }
 
 /// Returns null-terminated string from `text`.
-/// Caller must `@ptrCast()` to cast to a `[:0]const u8`.
-/// Caller owns memory.
-pub inline fn toSentinel(text: []const u8, buf: [:0]u8) void {
+pub inline fn toSentinel(buf: [:0]u8, text: []const u8) void {
     const n = @min(text.len, buf.len - 1);
     @memcpy(buf[0..n], text[0..n]);
     buf[n] = 0;
@@ -38,7 +37,6 @@ pub inline fn toSentinel(text: []const u8, buf: [:0]u8) void {
 /// Button struct.
 pub const Button = struct {
     text: Text_(false),
-    text_cstr: [MAX_LEN:0]u8,
 
     padding_x: f32,
     padding_y: f32,
@@ -73,7 +71,6 @@ pub const Button = struct {
             .padding_y = settings.padding_y,
             .hitbox = undefined,
             .hover_anim_bar_width = 0.0,
-            .text_cstr = undefined,
         };
         self.hitbox = self.getHitbox();
 
@@ -81,11 +78,12 @@ pub const Button = struct {
     }
 
     pub fn getHitbox(self: *Button) rl.Rectangle {
-        toSentinel(self.text.body, &self.text_cstr);
+        var text_cstr: [MAX_LEN_0:0]u8 = undefined;
+        toSentinel(&text_cstr, self.text.body);
 
         const text_dimensions = rl.measureTextEx(
             self.text.font,
-            &self.text_cstr,
+            &text_cstr,
             @floatFromInt(@intFromEnum(self.text.font_size)),
             self.text.spacing,
         );
@@ -194,12 +192,11 @@ pub const ButtonSet = struct {
 };
 
 /// Doesn't allocate memory and takes slice.
-/// M is a boolean and represents if the inner body is mutable or not.
-fn Text_(M: bool) type {
-    const string_type = if (M) []u8 else []const u8;
+fn Text_(comptime Mutable: bool) type {
+    const T = if (Mutable) std.ArrayList(u8) else []const u8;
 
     return struct {
-        body: string_type,
+        body: T,
         x: f32, // x of anchor point
         y: f32, // y of anchor point
         font_size: FontSize,
@@ -208,10 +205,9 @@ fn Text_(M: bool) type {
         color: rl.Color,
         anchor: Anchor,
         hitbox: rl.Rectangle,
-        body_cstr: [MAX_LEN:0]u8,
 
         pub fn init(settings: struct {
-            body: string_type,
+            body: T,
             x: f32,
             y: f32,
             font: ?rl.Font = null,
@@ -219,8 +215,8 @@ fn Text_(M: bool) type {
             spacing: f32 = 2.0,
             color: rl.Color = .white,
             anchor: Anchor = .topleft,
-        }) !Text_(M) {
-            var self = Text_(M){
+        }) !Text_(Mutable) {
+            var self: Text_(Mutable) = .{
                 .body = settings.body,
                 .x = settings.x,
                 .y = settings.y,
@@ -230,7 +226,6 @@ fn Text_(M: bool) type {
                 .color = settings.color,
                 .anchor = settings.anchor,
                 .hitbox = undefined,
-                .body_cstr = undefined,
             };
             self.hitbox = self.getHitbox();
 
@@ -238,31 +233,39 @@ fn Text_(M: bool) type {
         }
 
         /// Returns hitbox for text.
-        pub fn getHitbox(self: *Text_(M)) rl.Rectangle {
-            toSentinel(self.body, &self.body_cstr);
+        pub fn getHitbox(self: *Text_(Mutable)) rl.Rectangle {
+            var body_cstr: [MAX_LEN_0:0]u8 = undefined;
+            toSentinel(&body_cstr, if (Mutable) self.body.items else self.body);
 
             const dimensions = rl.measureTextEx(
                 self.font,
-                &self.body_cstr,
+                &body_cstr,
                 @floatFromInt(@intFromEnum(self.font_size)),
                 self.spacing,
             );
-            return rl.Rectangle.init(self.x, self.y, dimensions.x, @floatFromInt(@intFromEnum(self.font_size)));
+
+            return rl.Rectangle.init(
+                self.x,
+                self.y,
+                dimensions.x,
+                @floatFromInt(@intFromEnum(self.font_size)),
+            );
         }
 
         /// Draws text on the screen.
-        pub fn update(self: *Text_(M)) void {
+        pub fn update(self: *Text_(Mutable)) void {
             self.drawBuffer(self.body);
         }
 
         /// Actually draws the text on the screen. buf is passed to allow drawing any buffer.
         /// Kinda bs but necessary for TextBox lol
-        pub fn drawBuffer(self: *Text_(M), buf: string_type) void {
-            toSentinel(buf, &self.body_cstr);
+        pub fn drawBuffer(self: *Text_(Mutable), buf: T) void {
+            var body_cstr: [MAX_LEN_0:0]u8 = undefined;
+            toSentinel(&body_cstr, if (Mutable) buf.items else buf);
 
             rl.drawTextEx(
                 self.font,
-                &self.body_cstr,
+                &body_cstr,
                 switch (self.anchor) {
                     .topleft => .init(self.x, self.y),
                     .center => .init(self.x - self.hitbox.width / 2.0, self.y - self.hitbox.height / 2.0),
@@ -285,18 +288,15 @@ pub const BoxLabel = struct {
 pub const TextBox = struct {
     label: Text,
     inner_text: TextVariable,
-    len: usize,
     max_len: usize,
     focused: bool,
     last_backspaced: ?i64,
     backspace_fast: bool,
     anim_bar_len: f32,
 
-    // NEW fields for cursor handling / blinking
     cursor_pos: usize, // position of caret in [0..len]
     cursor_last_blink: i64, // last time caret blink toggled
     cursor_visible: bool, // current visible state of caret
-    till_cursor_cstr: [MAX_LEN:0]u8,
 
     pub fn init(alloc: std.mem.Allocator, settings: struct {
         x: f32,
@@ -315,11 +315,16 @@ pub const TextBox = struct {
             .y = settings.y,
             .body = settings.label,
         });
-        var self: TextBox = .{
+
+        return .{
             .inner_text = try TextVariable.init(.{
                 .x = getRight(label.hitbox) + 16.0,
                 .y = settings.y,
-                .body = "", // gets set right after this
+                .body = b: {
+                    var body = try std.ArrayList(u8).initCapacity(alloc, settings.max_len);
+                    body.appendSliceAssumeCapacity(settings.default_body);
+                    break :b body;
+                },
                 .font = settings.font orelse chalk_font,
                 .font_size = settings.font_size,
                 .spacing = settings.spacing,
@@ -327,7 +332,6 @@ pub const TextBox = struct {
                 .anchor = settings.anchor,
             }),
             .label = label,
-            .len = settings.default_body.len,
             .max_len = settings.max_len,
             .focused = false,
             .last_backspaced = null,
@@ -338,26 +342,22 @@ pub const TextBox = struct {
             .cursor_pos = settings.default_body.len,
             .cursor_last_blink = std.time.milliTimestamp(),
             .cursor_visible = true,
-            .till_cursor_cstr = undefined,
         };
-
-        self.inner_text.body = try alloc.alloc(u8, settings.max_len + 1);
-        @memset(self.inner_text.body, 0);
-        @memcpy(self.inner_text.body[0..settings.default_body.len], settings.default_body);
-        return self;
     }
 
-    pub fn deinit(self: *const TextBox, alloc: std.mem.Allocator) void {
-        alloc.free(self.inner_text.body);
+    pub fn deinit(self: *TextBox, alloc: std.mem.Allocator) void {
+        self.inner_text.body.deinit(alloc);
     }
 
     pub fn getBody(self: *const TextBox) []const u8 {
-        return self.inner_text.body;
+        return self.inner_text.body.items;
     }
 
     pub fn update(self: *TextBox) !void {
         const min_length = 96.0;
         const base_bar_len = @max(min_length, self.inner_text.hitbox.width);
+
+        self.label.update();
 
         // draw base underline
         rl.drawRectangleRec(
@@ -370,11 +370,12 @@ pub const TextBox = struct {
             .gray,
         );
 
-        // draw anime underline
+        // draw animation underline
         self.anim_bar_len = if (self.anim_bar_len + 1 < self.inner_text.hitbox.width)
             self.anim_bar_len + 1.0
         else
             @max(self.anim_bar_len - 1.0, 0.0);
+
         rl.drawRectangleRec(
             .init(
                 self.inner_text.hitbox.x,
@@ -388,34 +389,31 @@ pub const TextBox = struct {
         if (rl.isMouseButtonPressed(.left)) {
             self.focused = rl.checkCollisionPointRec(rl.getMousePosition(), self.getShadowHitbox());
             // when focusing with mouse, set cursor to end by default
-            if (self.focused) self.cursor_pos = self.len;
+            if (self.focused) self.cursor_pos = self.getBody().len;
         }
 
         if (self.focused) {
-            if (rl.isKeyPressed(.right) and self.cursor_pos < self.len) {
+            if (rl.isKeyPressed(.right) and self.cursor_pos < self.getBody().len) {
                 self.cursor_pos += 1;
                 // reset blink so caret is visible right after move
                 self.cursor_visible = true;
                 self.cursor_last_blink = std.time.milliTimestamp();
             }
+
             if (rl.isKeyPressed(.left) and self.cursor_pos > 0) {
                 self.cursor_pos -= 1;
                 self.cursor_visible = true;
                 self.cursor_last_blink = std.time.milliTimestamp();
             }
 
-            if (rl.isKeyDown(.backspace) and self.len > 0) {
+            if (rl.isKeyDown(.backspace) and self.getBody().len > 0) {
                 if (self.last_backspaced) |t| {
                     const now = std.time.milliTimestamp();
                     if (now - t > 500 or self.backspace_fast and now - t > 50) {
                         self.last_backspaced = now;
                         // if cursor is at > 0, remove the char before cursor
                         if (self.cursor_pos > 0) {
-                            // shift left from cursor_pos..len-1 into (cursor_pos-1)..
-                            for (self.cursor_pos..self.len) |i|
-                                self.inner_text.body[i - 1] = self.inner_text.body[i];
-
-                            self.len -= 1;
+                            _ = self.inner_text.body.orderedRemove(self.cursor_pos - 1);
                             self.cursor_pos -= 1;
                             self.backspace_fast = true;
                         }
@@ -423,10 +421,7 @@ pub const TextBox = struct {
                 } else {
                     self.last_backspaced = std.time.milliTimestamp();
                     if (self.cursor_pos > 0) {
-                        for (self.cursor_pos..self.len) |i|
-                            self.inner_text.body[i - 1] = self.inner_text.body[i];
-
-                        self.len -= 1;
+                        _ = self.inner_text.body.orderedRemove(self.cursor_pos - 1);
                         self.cursor_pos -= 1;
                     }
                 }
@@ -437,24 +432,13 @@ pub const TextBox = struct {
 
                 // --- insert typed characters at cursor (not only at the end) ---
                 var key = rl.getCharPressed(); // get char pressed
-                while (key != 0) { // loop until all chars processed
-                    if (self.len < self.inner_text.body.len - 1) {
-                        // shift right from cursor_pos..len-1 into (cursor_pos+1)..
-                        var i: usize = self.len;
-                        while (i > self.cursor_pos) : (i -= 1) {
-                            self.inner_text.body[i] = self.inner_text.body[i - 1];
-                        }
+                while (key != 0) : (key = rl.getCharPressed()) { // loop until all chars processed
+                    self.inner_text.body.insertBounded(self.cursor_pos, @intCast(key)) catch break;
+                    self.cursor_pos += 1;
 
-                        // insert the key at cursor_pos
-                        self.inner_text.body[self.cursor_pos] = @intCast(key);
-                        self.len += 1;
-                        self.cursor_pos += 1;
-
-                        // reset blink so caret appears immediately
-                        self.cursor_visible = true;
-                        self.cursor_last_blink = std.time.milliTimestamp();
-                    }
-                    key = rl.getCharPressed(); // get next char
+                    // reset blink so caret appears immediately
+                    self.cursor_visible = true;
+                    self.cursor_last_blink = std.time.milliTimestamp();
                 }
             }
         } else {
@@ -464,8 +448,7 @@ pub const TextBox = struct {
         }
 
         self.inner_text.hitbox = self.inner_text.getHitbox(); // update hitbox for current buffer
-        self.inner_text.body[self.len] = 0; // sentinel
-        self.inner_text.drawBuffer(self.inner_text.body[0..self.len]);
+        self.inner_text.update();
 
         // caret blinking and drawing
         const now = std.time.milliTimestamp();
@@ -476,11 +459,12 @@ pub const TextBox = struct {
 
         if (self.focused and self.cursor_visible) {
             // measure width of text up to cursor_pos to place caret
-            toSentinel(self.inner_text.body[0..self.cursor_pos], &self.till_cursor_cstr);
+            var till_cursor_cstr: [MAX_LEN_0:0]u8 = undefined;
+            toSentinel(&till_cursor_cstr, self.inner_text.body.items[0..self.cursor_pos]);
 
             const pre_dim = rl.measureTextEx(
                 self.inner_text.font,
-                &self.till_cursor_cstr,
+                &till_cursor_cstr,
                 @floatFromInt(@intFromEnum(self.inner_text.font_size)),
                 self.inner_text.spacing,
             );
@@ -585,11 +569,11 @@ pub const TextBoxSet = struct {
 
         for (references, 0..) |ref, i| {
             try self.boxes[i].update();
-            const len = self.boxes[i].len;
-            if (len > 0 and ref.len > len) {
-                @memcpy(ref[0..len], self.boxes[i].inner_text.body[0..len]);
-                ref[len] = 0;
-            } else if (len == 0) ref[0] = 0;
+            const body = self.boxes[i].getBody();
+            if (body.len > 0 and ref.len > body.len) {
+                @memcpy(ref[0..body.len], body);
+                ref[body.len] = 0;
+            } else if (body.len == 0) ref[0] = 0;
         }
     }
 

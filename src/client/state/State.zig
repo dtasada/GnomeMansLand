@@ -38,7 +38,7 @@ alloc: std.mem.Allocator,
 pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
     return .{
         .type = .lobby,
-        .lobby = try Lobby.init(alloc),
+        .lobby = try Lobby.init(alloc, .{}),
         .lobby_settings = try LobbySettings.init(alloc),
         .server_setup = try ServerSetup.init(alloc, settings),
         .client_setup = try ClientSetup.init(alloc, settings),
@@ -88,7 +88,7 @@ pub fn serverSetup(self: *Self) void {
 /// If a server exists locally, the game data map will point to the server map.
 /// Else, the client expects to receive a map payload from a remote server.
 pub fn openGame(self: *Self, game: *Game) !void {
-    if (self.lobby.nickname_input.len != 0) {
+    if (self.lobby.nickname_input.getBody().len != 0) {
         try game.initClient(
             self.lobby.nickname_input.getBody(),
             if (game.server) |s| s.game_data.map else null,

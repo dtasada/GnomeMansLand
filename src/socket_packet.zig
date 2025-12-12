@@ -6,10 +6,7 @@ const commons = @import("commons");
 const ServerGameData = @import("server").GameData;
 
 /// Identifies the different types of messages that can be sent and received.
-pub const Packet = union(enum(Packet.TagType)) {
-    pub const Tag = std.meta.Tag(@This()); // returns the integer type of the enum
-    pub const TagType = u8;
-
+pub const Packet = union(enum(u8)) {
     /// Send to client when the server is full and has reached the maximum player limit.
     server_full,
     /// Request by a client to receive game map data

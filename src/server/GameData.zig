@@ -119,7 +119,7 @@ pub const Map = struct {
         y: usize,
     ) void {
         for (0..self.size.x) |x| {
-            var freq = 7.68 * settings.world_generation.frequency / @as(f32, @floatFromInt(self.size.x));
+            var freq = 0.0001 * settings.world_generation.frequency;
             var height: f32 = 0.0;
             var amp: f32 = settings.world_generation.amplitude;
             var maxValue: f32 = 0.0;
