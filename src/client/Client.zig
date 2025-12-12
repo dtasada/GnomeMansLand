@@ -77,7 +77,8 @@ pub fn init(
             break :b .{ .no = accept.map_size };
         },
     );
-    try self.send(.client_requests_map_data);
+
+    if (server_map == null) try self.send(.client_requests_map_data);
 
     try self.sock.setReadTimeout(500 * 1000); // set 500 ms timeout for thread join
 
@@ -93,6 +94,8 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     self.game_data.deinit(self.alloc);
 
     network.deinit();
+
+    self.threaded.deinit();
 
     alloc.destroy(self);
 }

@@ -100,8 +100,6 @@ pub const MapChunk = struct {
         };
 
         _ = server_map.network_chunks_generated.fetchAdd(1, .monotonic);
-        if (server_map.network_chunks_generated.load(.monotonic) == chunks.len)
-            server_map.network_chunks_ready.store(true, .monotonic);
     }
 };
 

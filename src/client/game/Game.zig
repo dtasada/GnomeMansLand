@@ -176,7 +176,7 @@ pub fn initServer(self: *Self) !void {
 }
 
 /// Initializes client. Deinits first if client already existed.
-/// `is_host` determines if the client should own the map or not.
+/// `server_map` determines if the client should own the map or not.
 pub fn initClient(self: *Self, nickname: []const u8, server_map: ?*Server.GameData.Map) !void {
     if (self.client) |client| client.deinit(self.alloc);
 

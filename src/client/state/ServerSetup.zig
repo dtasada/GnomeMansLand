@@ -52,23 +52,23 @@ pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
 pub fn update(self: *Self, game: *Game) !void {
     if (game.server) |server| {
         const map = server.game_data.map;
-        if (!map.finished_generating.load(.monotonic) or
-            !map.network_chunks_ready.load(.monotonic))
+        if (!server.mapFinishedGenerating() or
+            !server.mapChunksReady())
         {
             rl.beginDrawing();
             rl.clearBackground(.black);
 
             var buf: [24]u8 = undefined;
-            const body = if (!map.finished_generating.load(.monotonic))
+            const body = if (!server.mapFinishedGenerating())
                 try std.fmt.bufPrint(
                     &buf,
                     "Creating world ({}%)...",
                     .{@divFloor(
-                        map.floats_written.load(.monotonic),
+                        100 * map.floats_written.load(.monotonic),
                         map.height_map.len,
                     )},
                 )
-            else if (!map.network_chunks_ready.load(.monotonic))
+            else if (!server.mapChunksReady())
                 try std.fmt.bufPrint(
                     &buf,
                     "Preparing world ({}%)...",

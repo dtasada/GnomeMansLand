@@ -110,6 +110,9 @@ pub fn hostServer(self: *Self, game: *Game) !void {
 
 /// Waits for server to finish generating world, then opens the game locally.
 fn waitForServer(self: *Self, game: *Game) !void {
-    while (!game.server.?.game_data.map.finished_generating.load(.monotonic)) : (try game.server.?.threaded.io().sleep(.fromMilliseconds(200), .awake)) {}
+    const server = game.server.?;
+    while (!server.mapFinishedGenerating() or !server.mapChunksReady())
+        try game.server.?.threaded.io().sleep(.fromMilliseconds(200), .awake);
+
     try self.openGame(game);
 }

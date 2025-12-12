@@ -172,12 +172,13 @@ fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) 
             try client.send(self.alloc, .{ .server_accepted_client = .init(self.game_data.map.size) });
         },
         .client_requests_map_data => {
-            while (!self.game_data.map.network_chunks_ready.load(.monotonic)) {}
-            for (self.socket_packets.map_chunks) |c|
+            while (!self.mapChunksReady()) {}
+            for (self.socket_packets.map_chunks) |c| {
                 client.send(self.alloc, .{ .map_chunk = c }) catch |err| {
                     commons.print("Failed to send message to client: {}\n", .{err}, .yellow);
                     return;
                 };
+            }
         },
         .resend_request => @panic("unimplemented"),
         .client_requests_move_player => |move_player| {
@@ -194,7 +195,7 @@ fn handleMessage(self: *Self, client: *const Client, message_bytes: []const u8) 
 
 fn prepareMapChunks(self: *Self) !void {
     // Wait for the main map to finish generating
-    while (!self.game_data.map.finished_generating.load(.monotonic)) : (try self.threaded.io().sleep(.fromMilliseconds(100), .awake)) {}
+    while (!self.mapFinishedGenerating()) : (try self.threaded.io().sleep(.fromMilliseconds(100), .awake)) {}
 
     // Now that the map is ready, generate the network chunks from it.
     try socket_packet.MapChunk.init(
@@ -235,8 +236,7 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     };
     errdefer self.alloc.free(self.socket_packets.map_chunks);
 
-    const t = try std.Thread.spawn(.{}, Self.prepareMapChunks, .{self});
-    t.detach();
+    (try std.Thread.spawn(.{}, Self.prepareMapChunks, .{self})).detach();
 
     try network.init();
     errdefer network.deinit();
@@ -254,7 +254,7 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
 
     try self.sock.listen();
 
-    self.running = std.atomic.Value(bool).init(true);
+    self.running = .init(true);
 
     self.listen_thread = try std.Thread.spawn(.{}, Self.listen, .{self});
 
@@ -281,6 +281,8 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     self.sock.close();
 
     network.deinit();
+
+    self.threaded.deinit();
 
     _ = self.gpa.deinit();
 
@@ -330,4 +332,14 @@ fn appendPlayer(self: *Self, connect_request: socket_packet.ClientRequestsConnec
         @intCast(self.game_data.players.items.len),
         nickname_dupe,
     )) catch return error.ServerFull;
+}
+
+pub fn mapChunksReady(self: *const Self) bool {
+    return self.game_data.map.network_chunks_generated.load(.monotonic) ==
+        self.socket_packets.map_chunks.len;
+}
+
+pub fn mapFinishedGenerating(self: *const Self) bool {
+    return self.game_data.map.floats_written.load(.monotonic) ==
+        self.game_data.map.height_map.len;
 }

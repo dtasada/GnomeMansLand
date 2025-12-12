@@ -257,8 +257,7 @@ fn Text_(comptime Mutable: bool) type {
             self.drawBuffer(self.body);
         }
 
-        /// Actually draws the text on the screen. buf is passed to allow drawing any buffer.
-        /// Kinda bs but necessary for TextBox lol
+        /// Draws any text in `buf` regardless of `self.body` using all other properties of `self`.
         pub fn drawBuffer(self: *Text_(Mutable), buf: T) void {
             var body_cstr: [MAX_LEN_0:0]u8 = undefined;
             toSentinel(&body_cstr, if (Mutable) buf.items else buf);
