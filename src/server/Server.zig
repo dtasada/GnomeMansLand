@@ -50,7 +50,7 @@ const Client = struct {
     sock: network.Socket,
 
     /// Thread that runs `handleClientReceive`
-    thread_handle_receive: std.Thread,
+    receive_handler: std.Io.Future(anyerror!void),
 
     /// Thread that runs `handleClientSend`
     thread_handle_send: std.Thread,
@@ -77,14 +77,12 @@ const Client = struct {
 };
 
 /// Runs until the client is disconnected. Reads incoming messages and calls `handleMessage`.
-fn handleClientReceive(self: *Self, client: *Client) !void {
+fn handleClientReceive(self: *Self, client: *Client) anyerror!void {
     defer {
         client.open.store(false, .monotonic);
         client.thread_handle_send.join();
         client.sock.close();
     }
-
-    try client.sock.setReadTimeout(500 * 1000);
 
     var pending_data = try std.ArrayList(u8).initCapacity(self.alloc, BYTE_LIMIT);
     defer pending_data.deinit(self.alloc);
@@ -94,12 +92,10 @@ fn handleClientReceive(self: *Self, client: *Client) !void {
     var message_len: u32 = 0;
     var reading_len = true;
 
+    const io = self.threaded.io();
     while (self.running.load(.monotonic)) {
-        const bytes_read = client.sock.receive(&read_buffer) catch |err| switch (err) {
-            error.WouldBlock => {
-                try self.threaded.io().sleep(.fromMilliseconds(10), .awake); // Sleep briefly if no data
-                continue;
-            },
+        var reading = io.async(network.Socket.receive, .{ client.sock, &read_buffer });
+        const bytes_read = reading.await(io) catch |err| switch (err) {
             error.ConnectionResetByPeer => break, // Client disconnected
             else => return err,
         };
@@ -216,6 +212,8 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
     self.tsa = .{ .child_allocator = self.gpa.allocator() };
     self.alloc = self.tsa.allocator();
 
+    self.threaded = .init(self.alloc);
+
     self.settings = settings;
 
     self.clients = try .initCapacity(self.alloc, self.settings.max_players);
@@ -258,8 +256,6 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
 
     self.listen_thread = try std.Thread.spawn(.{}, Self.listen, .{self});
 
-    try self.sock.setReadTimeout(500 * 1000);
-
     return self;
 }
 
@@ -272,7 +268,12 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     self.listen_thread.detach(); // this works for some reason. see thousand yard stare
 
     for (self.clients.items) |client| {
-        client.thread_handle_receive.join();
+        client.receive_handler.cancel(self.threaded.io()) catch |err|
+            commons.print(
+                "Server error: Could not cancel client receiving handler: {}\n",
+                .{err},
+                .red,
+            );
         self.alloc.destroy(client);
     }
 
@@ -294,12 +295,9 @@ fn listen(self: *Self) !void {
     try self.sock.listen();
 
     while (self.running.load(.monotonic)) {
-        const sock = self.sock.accept() catch |err| switch (err) {
-            error.WouldBlock, error.ConnectionAborted => continue,
-            else => {
-                commons.print("Server socket closed, shutting down...\n", .{}, .blue);
-                break;
-            },
+        const sock = self.sock.accept() catch |err| {
+            commons.print("Server socket closed: {}. Shutting down...\n", .{err}, .blue);
+            break;
         };
 
         var client = try self.alloc.create(Client);
@@ -307,12 +305,13 @@ fn listen(self: *Self) !void {
 
         client.* = .{
             .sock = sock,
-            .thread_handle_receive = undefined,
+            .receive_handler = undefined,
             .thread_handle_send = undefined,
             .id = @intCast(self.clients.items.len),
             .open = .init(true),
         };
-        client.thread_handle_receive = try std.Thread.spawn(.{}, handleClientReceive, .{ self, client });
+        // client.thread_handle_receive = try std.Thread.spawn(.{}, handleClientReceive, .{ self, client });
+        client.receive_handler = self.threaded.io().async(handleClientReceive, .{ self, client });
         client.thread_handle_send = try std.Thread.spawn(.{}, handleClientSend, .{ self, client });
 
         try self.clients.append(self.alloc, client);
