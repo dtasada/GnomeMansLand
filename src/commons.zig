@@ -24,28 +24,21 @@ pub const v2u = v2(u32);
 
 const Color = enum { white, red, green, blue, yellow };
 
-/// Prints `text` formatted with `args` to standard I/O. Formats the message with `Color`
-pub fn print(comptime fmt: []const u8, args: anytype, comptime color: Color) void {
-    var buf: [1024]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&buf);
-    var stdout = &stdout_writer.interface;
-
-    stdout.print(
-        switch (color) {
-            .white => "",
-            .red => "\x1b[0;31m",
-            .green => "\x1b[0;34m",
-            .blue => "\x1b[0;32m",
-            .yellow => "\x1b[0;33m",
-        } ++ fmt ++ "\x1b[0m",
-        args,
-    ) catch |err| std.debug.print("Couldn't stdout.print(): {}\n", .{err});
-
-    stdout.flush() catch |err| std.debug.print("Couldn't stdout.flush(): {}\n", .{err});
+/// Prints `text` formatted with `args` to stdlog. Formats the message with `Color`
+pub inline fn print(comptime fmt: []const u8, args: anytype, comptime color: Color) void {
+    switch (color) {
+        .white => std.log.info(fmt, args),
+        .blue => std.log.info("\x1b[0;32m" ++ fmt ++ "\x1b[0m", args),
+        .green => std.log.info("\x1b[0;34m" ++ fmt ++ "\x1b[0m", args),
+        .yellow => std.log.warn("\x1b[0;33m" ++ fmt ++ "\x1b[0m", args),
+        .red => std.log.err("\x1b[0;31m" ++ fmt ++ "\x1b[0m", args),
+    }
 }
 
 /// Prints an error `err` with `text` formatted with `args` to standard I/O, and returns `err`.
-/// Formats the message with `Color`.
+/// Formats the message with `color`.
+/// Has no inherent functionality, but is used as a syntax sugar for returning an error while
+/// also printing something.
 pub inline fn printErr(
     err: anytype,
     comptime text: []const u8,

@@ -88,13 +88,13 @@ pub fn serverSetup(self: *Self) void {
 /// If a server exists locally, the game data map will point to the server map.
 /// Else, the client expects to receive a map payload from a remote server.
 pub fn openGame(self: *Self, game: *Game) !void {
-    if (self.lobby.nickname_input.getBody().len != 0) {
-        try game.initClient(
-            self.lobby.nickname_input.getBody(),
-            if (game.server) |s| s.game_data.map else null,
-        );
-        self.type = .game;
-    } else @panic("unimplemented");
+    std.debug.assert(self.lobby.nickname_input.getBody().len != 0);
+
+    try game.initClient(
+        self.lobby.nickname_input.getBody(),
+        if (game.server) |s| s.game_data.map else null,
+    );
+    self.type = .game;
 }
 
 /// (Re)initializes server. Starts a thread for `waitForServer`

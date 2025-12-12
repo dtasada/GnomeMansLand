@@ -15,6 +15,7 @@ const Self = @This();
 nickname_input: ui.TextBox,
 buttons: ui.ButtonSet,
 title_text: ui.Text,
+nickname_error_text: ?ui.Text = null,
 
 pub fn init(
     alloc: std.mem.Allocator,
@@ -72,7 +73,7 @@ pub fn update(self: *Self, game: *Game) !void {
     rl.clearBackground(.black);
 
     try self.buttons.update(.{
-        .{ State.serverSetup, .{&game.state} },
+        .{ serverSetup, .{ self, &game.state } },
         .{ State.clientSetup, .{&game.state} },
         .{ State.openSettings, .{&game.state} },
     });
@@ -81,5 +82,24 @@ pub fn update(self: *Self, game: *Game) !void {
 
     try self.nickname_input.update();
 
+    if (self.nickname_error_text) |*t| t.update();
+
     rl.endDrawing();
+}
+
+pub fn serverSetup(self: *Self, game_state: *State) void {
+    if (game_state.lobby.nickname_input.getBody().len != 0) {
+        self.nickname_error_text = null;
+        State.serverSetup(game_state);
+    } else {
+        if (self.nickname_error_text == null) {
+            const nickname_input_pos = game_state.lobby.nickname_input.label.getHitbox();
+            self.nickname_error_text = try .init(.{
+                .body = "nickname can't be empty!",
+                .x = nickname_input_pos.x,
+                .y = nickname_input_pos.y + nickname_input_pos.height + 12,
+                .color = .red,
+            });
+        }
+    }
 }

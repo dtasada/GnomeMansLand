@@ -72,38 +72,9 @@ pub fn resetCamera(self: *Self, game: *Game) void {
 }
 
 fn drawUi(self: *const Self, game: *Game) void {
-    if (self.camera) |camera| {
-        rl.drawText(rl.textFormat("Camera x: %.1f, y: %.1f, z: %.1f", .{
-            camera.position.x,
-            camera.position.y,
-            camera.position.z,
-        }), 12, 12, 24, .white);
-    }
-
-    rl.drawText(rl.textFormat("Mouse 2D x: %d, y: %d", .{
-        rl.getMouseX(),
-        rl.getMouseY(),
-    }), 12, 32, 24, .white);
-
-    rl.drawText(rl.textFormat("FPS: %d", .{rl.getFPS()}), 12, 52, 24, .white);
-
-    // Add map debugging
-    if (game.client) |client| {
-        const map = &client.game_data.map;
-        rl.drawText(rl.textFormat("World: %dx%d, Complete: %d", .{
-            map.size.x,
-            map.size.y,
-            @as(i32, if (map.allFloatsDownloaded()) 1 else 0),
-        }), 12, 72, 24, .white);
-
-        const chunks_total = map.models.len;
-        var chunks_loaded: u32 = 0;
-        for (map.models) |model| {
-            if (model != null) chunks_loaded += 1;
-        }
-
-        rl.drawText(rl.textFormat("Chunks: %d/%d loaded", .{ chunks_loaded, chunks_total }), 12, 112, 24, .white);
-    }
+    _ = self;
+    _ = game;
+    rl.drawText(rl.textFormat("FPS: %d", .{rl.getFPS()}), 12, 12, 24, .white);
 }
 
 pub fn update(self: *Self, game: *Game) !void {

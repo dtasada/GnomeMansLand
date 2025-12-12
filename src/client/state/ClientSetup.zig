@@ -13,19 +13,30 @@ const Self = @This();
 text_box_set: ui.TextBoxSet,
 button_set: ui.ButtonSet,
 /// u16 port number can only be 5 chars
-server_port_string_buf: [6]u8,
-connect_error: ?ui.Text,
+server_port_string_buf: [6]u8 = undefined,
+connect_error_text: ?ui.Text = null,
+server_port_error_text: ?ui.Text = null,
 
 pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
-    var self: Self = undefined;
-    self.connect_error = null;
+    var self: Self = .{
+        .text_box_set = undefined,
+        .button_set = undefined,
+    };
 
     self.text_box_set = try ui.TextBoxSet.initGeneric(
         alloc,
         .{ .top_left_x = 24, .top_left_y = 128 },
         &.{
-            .{ .label = "Server address: ", .max_len = 15, .default_value = @constCast(settings.multiplayer.server_host) },
-            .{ .label = "Server port: ", .max_len = 5, .default_value = try std.fmt.bufPrint(&self.server_port_string_buf, "{}", .{settings.multiplayer.server_port}) }, // buf.len - 1 bc discard sentinel
+            .{
+                .label = "Server address: ",
+                .max_len = 15,
+                .default_value = @constCast(settings.multiplayer.server_host),
+            },
+            .{
+                .label = "Server port: ",
+                .max_len = self.server_port_string_buf.len - 1,
+                .default_value = try std.fmt.bufPrint(&self.server_port_string_buf, "{}", .{settings.multiplayer.server_port}),
+            }, // buf.len - 1 bc discard sentinel
         },
     );
     self.button_set = try ui.ButtonSet.initGeneric(
@@ -62,7 +73,7 @@ pub fn update(self: *Self, game: *Game) !void {
         .{ State.openLobby, .{&game.state} },
     }) catch |err| switch (err) {
         error.CouldNotConnect => {
-            self.connect_error = try ui.Text.init(.{
+            self.connect_error_text = try ui.Text.init(.{
                 .body = "Couldn't connect to server!",
                 .color = .red,
                 .x = ui.getRight(self.button_set.buttons[0].getHitbox()) + 12.0,
@@ -72,23 +83,24 @@ pub fn update(self: *Self, game: *Game) !void {
         else => return err,
     };
 
-    if (self.connect_error) |*ce| ce.update();
+    if (self.connect_error_text) |*ce| ce.update();
 
     // bro do not touch this code this is so fragile bro. null termination sucks
     if (std.mem.indexOfScalar(u8, &self.server_port_string_buf, 0)) |len| {
-        game.settings.multiplayer.server_port = std.fmt.parseUnsigned(u16, @ptrCast(self.server_port_string_buf[0..len]), 10) catch def: {
+        game.settings.multiplayer.server_port = std.fmt.parseUnsigned(u16, @ptrCast(self.server_port_string_buf[0..len]), 10) catch default: {
             var port_box = self.text_box_set.boxes[1];
-            var error_text = try ui.Text.init(.{
+            self.server_port_error_text = try ui.Text.init(.{
                 .body = "not a valid number!",
                 .x = port_box.inner_text.hitbox.x + port_box.getShadowHitbox().width,
                 .y = port_box.inner_text.hitbox.y,
                 .color = .red,
             });
-            error_text.update();
 
-            break :def game.settings.multiplayer.server_port;
+            break :default game.settings.multiplayer.server_port;
         };
     }
+
+    if (self.server_port_error_text) |*t| t.update();
 
     rl.endDrawing();
 }
