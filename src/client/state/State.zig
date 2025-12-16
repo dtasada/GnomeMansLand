@@ -101,6 +101,7 @@ pub fn serverSetup(self: *Self) void {
 /// If a server exists locally, the game data map will point to the server map.
 /// Else, the client expects to receive a map payload from a remote server.
 pub fn openGame(self: *Self, game: *Game) !void {
+    // nickname input may not be empty.
     std.debug.assert(self.lobby.nickname_input.getBody().len != 0);
 
     try game.initClient(

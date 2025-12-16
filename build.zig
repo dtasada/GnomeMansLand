@@ -74,8 +74,8 @@ pub fn build(b: *std.Build) !void {
     // dependencies
     const raylib_mod = Module.init("raylib", raylib_dep.module("raylib"));
     const raygui_mod = Module.init("raygui", raylib_dep.module("raygui"));
-    const network_mod = modules.create("network", "src/lib/network.zig");
-    const s2s_mod = modules.create("s2s", "src/lib/s2s.zig");
+    const network_mod = Module.init("network", b.dependency("network", .{}).module("network"));
+    const s2s_mod = Module.init("s2s", b.dependency("s2s", .{}).module("s2s"));
 
     // internal packages
     const socket_packet_mod = modules.create("socket_packet", "src/socket_packet.zig");
@@ -94,7 +94,7 @@ pub fn build(b: *std.Build) !void {
     exe_mod.addImport("game", game_mod.mod);
     exe_mod.addImport("commons", commons_mod.mod);
 
-    exe.linkLibrary(raylib_artifact);
+    exe_mod.linkLibrary(raylib_artifact);
 
     b.installArtifact(exe);
 

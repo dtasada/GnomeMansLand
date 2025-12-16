@@ -43,8 +43,8 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
 
     setupRaylib(settings);
 
-    ui.chalk_font = try rl.loadFontEx("resources/fonts/chalk.ttf", 128, null);
-    ui.gwathlyn_font = try rl.loadFontEx("resources/fonts/gwathlyn.ttf", 128, null);
+    ui.chalk_font = try rl.Font.initEx("resources/fonts/chalk.ttf", 144, null);
+    ui.gwathlyn_font = try rl.Font.initEx("resources/fonts/gwathlyn.ttf", 144, null);
 
     self.* = .{
         .gpa = self.gpa,

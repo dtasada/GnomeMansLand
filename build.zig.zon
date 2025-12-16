@@ -6,22 +6,22 @@
 
     .dependencies = .{
         .raylib_zig = .{
-            .url = "git+https://github.com/raylib-zig/raylib-zig?ref=devel#a4d18b2d1cf8fdddec68b5b084535fca0475f466",
-            .hash = "raylib_zig-5.6.0-dev-KE8REL5MBQAf3p497t52Xw9P7ojndIkVOWPXnLiLLw2P",
+            .url = "git+https://github.com/dtasada/raylib-zig?ref=devel#ea7606c472372dc163c759a25996963b98190209",
+            .hash = "raylib_zig-5.6.0-dev-KE8REMBMBQDkYoQe4sGG76LNpErPTuMIrYccOSu_oJnj",
         },
         .network = .{
-            .url = "https://github.com/MasterQ32/zig-network/archive/92cd82679d0fc065cbbdb6c446b9e561a75a44a6.tar.gz",
-            .hash = "network-0.1.0-Pm-AgmUxAQD-rOaM_3wMkaxea1PBKda1Hn6F82Nw1F3u",
+            .url = "git+https://github.com/dtasada/zig-network#b73942a8e4f2bf1897c427a3d137ffbfcfe52ba4",
+            .hash = "network-0.1.0-Pm-AgmIxAQCn6LFeZw9PdUJTihmA7E0RPXxv8vI_T7LU",
         },
         .s2s = .{
-            .url = "https://github.com/ziglibs/s2s/archive/a51f347ae5e01ad634cf736e054cf348d90c4f04.tar.gz",
-            .hash = "s2s-0.0.1-qt8ajd57AAA--HKwcpRdTd5Gr2anqqceKchvLmkSTywh",
+            .url = "https://github.com/dtasada/s2s/archive/ce32c87f4dfef6cc56978ad882c213318d475245.tar.gz",
+            .hash = "s2s-0.0.1-qt8ajcR7AACXwc6H02JRmZ-ETekeyCNZUctz7FnZu1EQ",
         },
         .emsdk = .{
             .url = "git+https://github.com/emscripten-core/emsdk?ref=4.0.9#3bcf1dcd01f040f370e10fe673a092d9ed79ebb5",
             .hash = "N-V-__8AAJl1DwBezhYo_VE6f53mPVm00R-Fk28NPW7P14EQ",
         },
-    },
+        },
     .paths = .{
         "build.zig",
         "build.zig.zon",
