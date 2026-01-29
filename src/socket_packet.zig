@@ -65,24 +65,20 @@ pub const MapChunk = struct {
 
     /// Asynchronoulsy populates `map_chunks`
     pub fn init(
-        alloc: std.mem.Allocator,
+        io: std.Io,
         map_chunks: []Self,
         server_map: *ServerGameData.Map,
     ) !void {
-        var pool: std.Thread.Pool = undefined;
-        try pool.init(.{ .allocator = alloc });
-        defer pool.deinit();
+        var pool: std.Io.Group = .init;
 
-        var wg: std.Thread.WaitGroup = .{};
-        for (0..map_chunks.len) |i| {
-            pool.spawnWg(&wg, genChunk, .{
+        for (0..map_chunks.len) |i|
+            pool.async(io, genChunk, .{
                 map_chunks,
                 server_map,
                 i,
             });
-        }
 
-        wg.wait();
+        try pool.await(io);
     }
 
     /// Generates a single chunk of index `i`.

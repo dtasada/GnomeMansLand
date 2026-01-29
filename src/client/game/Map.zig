@@ -101,7 +101,7 @@ inline fn calcAmountOfModels(size: commons.v2u) usize {
 
     if (amount_of_models > 2048)
         commons.print(
-            "Warning: {} models requested, this may cause performance issues\n",
+            "Warning: {} models requested, this may cause performance issues",
             .{amount_of_models},
             .yellow,
         );
@@ -146,7 +146,7 @@ pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
             // Add bounds checking
             if (min_x >= self.size.x or min_y >= self.size.y) {
                 commons.print(
-                    "Model generation bounds error: min_x={}, min_y={}, size={}x{}\n",
+                    "Model generation bounds error: min_x={}, min_y={}, size={}x{}",
                     .{ min_x, min_y, self.size.x, self.size.y },
                     .red,
                 );
@@ -194,7 +194,7 @@ pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
 
             const tex = rl.Texture.fromImage(image) catch |err| {
                 commons.print(
-                    "Failed to create texture: {}\n",
+                    "Failed to create texture: {}",
                     .{err},
                     .red,
                 );
@@ -205,7 +205,7 @@ pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
 
             const mesh = self.genTerrainMesh(min_x, max_x, min_y, max_y) catch |err| {
                 commons.print(
-                    "Failed to generate terrain mesh for chunk {}: {}\n",
+                    "Failed to generate terrain mesh for chunk {}: {}",
                     .{ model_index, err },
                     .red,
                 );
@@ -215,7 +215,7 @@ pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
             const model = &self.models[model_index];
             model.* = rl.Model.fromMesh(mesh) catch |err| {
                 commons.print(
-                    "Failed to create model from mesh for chunk {}: {}\n",
+                    "Failed to create model from mesh for chunk {}: {}",
                     .{ model_index, err },
                     .red,
                 );
@@ -232,7 +232,7 @@ pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
 
             const mesh = self.genWallMesh(wall_index) catch |err| {
                 commons.print(
-                    "Failed to generate wall mesh for wall {}: {}\n",
+                    "Failed to generate wall mesh for wall {}: {}",
                     .{ wall_index, err },
                     .red,
                 );
@@ -242,7 +242,7 @@ pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
             const model = &self.models[model_index];
             model.* = rl.Model.fromMesh(mesh) catch |err| {
                 commons.print(
-                    "Failed to create model from mesh for world wall {}: {}\n",
+                    "Failed to create model from mesh for world wall {}: {}",
                     .{ wall_index, err },
                     .red,
                 );
@@ -254,7 +254,7 @@ pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
             defer wall_image.unload();
             const wall_tex = rl.Texture.fromImage(wall_image) catch |err| {
                 commons.print(
-                    "Failed to create texture for world wall {}: {}\n",
+                    "Failed to create texture for world wall {}: {}",
                     .{ wall_index, err },
                     .red,
                 );
@@ -272,7 +272,7 @@ pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
             const model = &self.models[model_index];
             model.* = rl.Model.fromMesh(mesh) catch |err| {
                 commons.print(
-                    "Failed to create model from mesh for world floor: {}\n",
+                    "Failed to create model from mesh for world floor: {}",
                     .{err},
                     .red,
                 );
@@ -291,7 +291,7 @@ pub fn genModels(self: *Self, _: Settings, light_shader: rl.Shader) !void {
             defer floor_image.unload();
             const floor_tex = rl.Texture.fromImage(floor_image) catch |err| {
                 commons.print(
-                    "Failed to create texture for game floor: {}\n",
+                    "Failed to create texture for game floor: {}",
                     .{err},
                     .red,
                 );
@@ -327,7 +327,7 @@ fn genTerrainMesh(
     // Add safety check for reasonable mesh sizes
     if (vertex_count > 10000 or triangle_count > 20000)
         commons.print(
-            "Large mesh detected: {} vertices, {} triangles\n",
+            "Large mesh detected: {} vertices, {} triangles",
             .{ vertex_count, triangle_count },
             .yellow,
         );

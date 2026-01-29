@@ -48,7 +48,7 @@ pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
         .client_setup = try ClientSetup.init(alloc, settings),
         .in_game = try InGame.init(alloc),
         .alloc = alloc,
-        .threaded = .init(alloc),
+        .threaded = .init(alloc, .{ .environ = .empty }),
         .wait_for_server = null,
     };
 }
@@ -83,7 +83,7 @@ pub fn openSettings(self: *Self) void {
 
 pub fn openLobby(self: *Self) void {
     self.lobby.reinit(self.alloc) catch |err| {
-        commons.print("Could not reinitalize lobby: {}\n", .{err}, .red);
+        commons.print("Could not reinitalize lobby: {}", .{err}, .red);
         return;
     };
     self.type = .lobby;
@@ -126,7 +126,7 @@ fn waitForServer(self: *Self, game: *Game) void {
 
     self.openGame(game) catch |err| {
         commons.print(
-            "Couldn't initialize game client: {}\n",
+            "Couldn't initialize game client: {}",
             .{err},
             .red,
         );

@@ -20,8 +20,8 @@ pub const input = @import("input.zig");
 
 const Self = @This();
 
-gpa: std.heap.DebugAllocator(.{}),
 alloc: std.mem.Allocator,
+io: std.Io,
 
 client: ?*Client = null,
 server: ?*Server = null,
@@ -31,13 +31,11 @@ settings: Settings,
 
 state: State,
 
-pub fn init(alloc: std.mem.Allocator) !*Self {
-    var self: *Self = try alloc.create(Self);
+pub fn init(alloc: std.mem.Allocator, io: std.Io) !*Self {
+    const self: *Self = try alloc.create(Self);
     errdefer alloc.destroy(self);
 
-    self.gpa = .init;
-    const inner_alloc = self.gpa.allocator();
-    const settings_parsed = try parseSettings(inner_alloc);
+    const settings_parsed = try parseSettings(alloc, io);
     errdefer settings_parsed.deinit();
     const settings = settings_parsed.value;
 
@@ -47,11 +45,11 @@ pub fn init(alloc: std.mem.Allocator) !*Self {
     ui.gwathlyn_font = try rl.Font.initEx("resources/fonts/gwathlyn.ttf", 144, null);
 
     self.* = .{
-        .gpa = self.gpa,
         ._settings_parsed = settings_parsed,
-        .alloc = inner_alloc,
+        .alloc = alloc,
+        .io = io,
         .settings = settings,
-        .state = try .init(inner_alloc, settings),
+        .state = try .init(alloc, settings),
     };
 
     return self;
@@ -69,7 +67,6 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     defer rl.closeWindow();
 
     defer alloc.destroy(self);
-    defer _ = self.gpa.deinit();
     defer self._settings_parsed.deinit();
 
     const settings_string: []u8 = std.json.Stringify.valueAlloc(
@@ -78,7 +75,7 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
         .{ .whitespace = .indent_4 },
     ) catch |err| {
         commons.print(
-            "Couldn't stringify settings for saving: {}\n",
+            "Couldn't stringify settings for saving: {}",
             .{err},
             .red,
         );
@@ -86,9 +83,9 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     };
     defer self.alloc.free(settings_string);
 
-    const settings_file = std.fs.cwd().createFile("./settings.json", .{}) catch |err| {
+    const settings_file = std.Io.Dir.cwd().createFile(self.io, "./settings.json", .{}) catch |err| {
         commons.print(
-            "Couldn't create settings file './settings.json': {}\n",
+            "Couldn't create settings file './settings.json': {}",
             .{err},
             .red,
         );
@@ -96,11 +93,11 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     };
 
     var settings_buf: [1024]u8 = undefined;
-    var file_writer = settings_file.writer(&settings_buf);
+    var file_writer = settings_file.writer(self.io, &settings_buf);
     const interface = &file_writer.interface;
     interface.writeAll(settings_string) catch |err| {
         commons.print(
-            "Couldn't write to settings file './settings.json': {}\n",
+            "Couldn't write to settings file './settings.json': {}",
             .{err},
             .red,
         );
@@ -109,7 +106,7 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
 
     interface.flush() catch |err| {
         commons.print(
-            "Couldn't flush settings file './settings.json': {}\n",
+            "Couldn't flush settings file './settings.json': {}",
             .{err},
             .red,
         );
@@ -148,8 +145,8 @@ fn setupRaylib(settings: Settings) void {
 }
 
 /// parses settings from "./settings.json"
-fn parseSettings(alloc: std.mem.Allocator) !std.json.Parsed(Settings) {
-    const file = try std.fs.cwd().readFileAlloc("./settings.json", alloc, .unlimited);
+fn parseSettings(alloc: std.mem.Allocator, io: std.Io) !std.json.Parsed(Settings) {
+    const file = try std.Io.Dir.cwd().readFileAlloc(io, "./settings.json", alloc, .unlimited);
     defer alloc.free(file);
 
     return std.json.parseFromSlice(Settings, alloc, file, .{});

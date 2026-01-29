@@ -177,7 +177,7 @@ pub const ButtonSet = struct {
         if (fields.len != self.buttons.len)
             return commons.printErr(
                 error.ButtonSetNotMatching,
-                "Amount of tuples passed to ButtonSet.update must equal amount of buttons passed in ButtonSet.init\n",
+                "Amount of tuples passed to ButtonSet.update must equal amount of buttons passed in ButtonSet.init",
                 .{},
                 .red,
             );
@@ -557,7 +557,7 @@ pub const TextBoxSet = struct {
     pub fn update(self: *TextBoxSet, references: []const []u8) !void {
         if (references.len != self.boxes.len) {
             commons.print(
-                "Amount of references passed to TextBoxSet.update must equal amount of labels passed in TextBoxSet.init\n",
+                "Amount of references passed to TextBoxSet.update must equal amount of labels passed in TextBoxSet.init",
                 .{},
                 .red,
             );

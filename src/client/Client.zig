@@ -1,7 +1,6 @@
 //! Local client handler struct
 const std = @import("std");
 const builtin = @import("builtin");
-const network = @import("network");
 
 const commons = @import("commons");
 const socket_packet = @import("socket_packet");
@@ -15,7 +14,7 @@ pub const Settings = @import("Settings.zig");
 const Self = @This();
 
 alloc: std.mem.Allocator,
-sock: network.Socket,
+stream: std.Io.net.Stream,
 listen_handler: std.Io.Future(anyerror!void),
 game_data: GameData,
 wait_list: struct {
@@ -24,6 +23,7 @@ wait_list: struct {
 running: std.atomic.Value(bool),
 polling_rate: u64,
 threaded: std.Io.Threaded,
+io: std.Io,
 
 const BYTE_LIMIT: usize = 65535;
 
@@ -36,33 +36,31 @@ pub fn init(
     var self = try alloc.create(Self);
     errdefer alloc.destroy(self);
 
-    try network.init();
-    errdefer network.deinit();
+    self.threaded = std.Io.Threaded.init(alloc, .{ .environ = .empty });
+    self.io = self.threaded.io();
 
-    self.* = .{
-        .alloc = alloc,
-        .wait_list = .{},
-        .sock = network.connectToHost(
-            self.alloc,
-            settings.multiplayer.server_host,
-            settings.multiplayer.server_port,
-            .tcp,
-        ) catch |err| return commons.printErr(
-            err,
-            "Couldn't connect to host server at ({s}:{}): {}\n",
-            .{ settings.multiplayer.server_host, settings.multiplayer.server_port, err },
-            .red,
-        ),
-        .listen_handler = undefined,
-        .running = .init(true),
-        .polling_rate = settings.multiplayer.polling_rate,
-        .game_data = undefined,
-        .threaded = .init(alloc),
-    };
-    errdefer self.game_data.deinit(self.alloc);
+    const address = try std.Io.net.IpAddress.parseIp4(
+        settings.multiplayer.server_host,
+        settings.multiplayer.server_port,
+    );
+
+    const sock = address.connect(self.io, .{ .mode = .stream }) catch |err| return commons.printErr(
+        error.CouldNotConnect,
+        "Couldn't connect to host server at ({s}:{}): {}",
+        .{ settings.multiplayer.server_host, settings.multiplayer.server_port, err },
+        .red,
+    );
+
+    self.alloc = alloc;
+    self.wait_list = .{};
+    self.stream = sock;
+
+    self.running = .init(true);
     errdefer self.running.store(false, .monotonic);
 
-    self.listen_handler = self.threaded.io().async(listen, .{self});
+    self.polling_rate = settings.multiplayer.polling_rate;
+
+    self.listen_handler = self.io.async(listen, .{self});
     self.game_data = try GameData.init(
         self.alloc,
         if (server_map) |s| b: {
@@ -86,18 +84,16 @@ pub fn init(
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     self.running.store(false, .monotonic);
 
-    self.listen_handler.cancel(self.threaded.io()) catch |err|
+    self.listen_handler.cancel(self.io) catch |err|
         commons.print(
-            "Client: Error canceling listen handler: {}\n",
+            "Client: Error canceling listen handler: {}",
             .{err},
             .yellow,
         );
 
-    self.sock.close();
+    self.stream.close(self.io);
 
     self.game_data.deinit(self.alloc);
-
-    network.deinit();
 
     self.threaded.deinit();
 
@@ -121,21 +117,20 @@ fn listen(self: *Self) anyerror!void {
     var message_len: u32 = 0;
     var reading_len = true;
 
-    const io = self.threaded.io();
     while (self.running.load(.monotonic)) {
-        var reading = io.async(network.Socket.receive, .{ self.sock, &read_buffer });
-        const bytes_read = reading.await(io) catch |err| switch (err) {
+        var reading = self.io.async(std.Io.net.Socket.receive, .{ &self.stream.socket, self.io, &read_buffer });
+        const message = reading.await(self.io) catch |err| switch (err) {
             error.ConnectionResetByPeer => {
                 self.running.store(false, .monotonic);
-                commons.print("Socket disconnected\n", .{}, .blue);
+                commons.print("Socket disconnected", .{}, .blue);
                 return;
             },
             else => return err,
         };
 
-        if (bytes_read == 0) continue;
+        if (message.data.len == 0) continue;
 
-        try pending_data.appendSlice(self.alloc, read_buffer[0..bytes_read]);
+        try pending_data.appendSlice(self.alloc, message.data);
 
         // Loop to process all complete messages in the pending_data buffer
         while (true) {
@@ -186,7 +181,7 @@ fn handleMessage(self: *Self, message_payload: []const u8) !void {
             self.wait_list.client_accepted = accepted_client;
         },
         else => commons.print(
-            "Received message with illegal descriptor {s} received from server\n",
+            "Received message with illegal descriptor {s} received from server",
             .{@tagName(std.meta.activeTag(packet))},
             .yellow,
         ),
@@ -201,7 +196,7 @@ pub fn send(self: *const Self, object: socket_packet.Packet) !void {
     const payload_bytes = serialize_writer.written();
 
     var client_writer_buf: [4096]u8 = undefined;
-    var client_writer = self.sock.writer(&client_writer_buf);
+    var client_writer = self.stream.writer(self.io, &client_writer_buf);
     try client_writer.interface.writeInt(u32, @intCast(payload_bytes.len), .big);
     try client_writer.interface.writeAll(payload_bytes);
     try client_writer.interface.flush();

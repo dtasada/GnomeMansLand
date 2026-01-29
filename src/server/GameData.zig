@@ -14,13 +14,13 @@ players: std.ArrayList(Player),
 server_settings: ServerSettings,
 
 /// Returns with an empty arraylist of players, and a Map pointer.
-pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !Self {
+pub fn init(alloc: std.mem.Allocator, io: std.Io, settings: ServerSettings) !Self {
     var players = try std.ArrayList(Player).initCapacity(alloc, settings.max_players);
     errdefer players.deinit(alloc);
 
     return .{
         .players = players,
-        .map = try Map.init(alloc, settings),
+        .map = try Map.init(alloc, io, settings),
         .server_settings = settings,
     };
 }
@@ -59,7 +59,7 @@ pub const Map = struct {
     terrain_gen_thread: ?std.Thread = null,
 
     /// starts genTerrainData thread.
-    pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Map {
+    pub fn init(alloc: std.mem.Allocator, io: std.Io, settings: ServerSettings) !*Map {
         const x, const y = settings.world_generation.resolution;
         const self = try alloc.create(Map);
         errdefer alloc.destroy(self);
@@ -69,7 +69,7 @@ pub const Map = struct {
         };
         errdefer alloc.free(self.height_map);
 
-        self.terrain_gen_thread = try std.Thread.spawn(.{}, genTerrainData, .{ self, alloc, settings });
+        self.terrain_gen_thread = try std.Thread.spawn(.{}, genTerrainData, .{ self, alloc, io, settings });
 
         return self;
     }
@@ -81,32 +81,27 @@ pub const Map = struct {
     }
 
     /// Asynchronously populates `map.height_map`
-    fn genTerrainData(self: *Map, alloc: std.mem.Allocator, settings: ServerSettings) !void {
-        const seed: u32 = settings.world_generation.seed orelse rand: {
-            var seed: u32 = undefined;
-            try std.posix.getrandom(std.mem.asBytes(&seed));
-            var rand = std.Random.DefaultPrng.init(seed);
-            break :rand rand.random().intRangeAtMost(u32, 0, std.math.maxInt(u32));
+    fn genTerrainData(self: *Map, alloc: std.mem.Allocator, io: std.Io, settings: ServerSettings) !void {
+        const seed: u32 = settings.world_generation.seed orelse b: {
+            var rand = std.Random.DefaultPrng
+                .init(@intCast((try std.time.Instant.now()).timestamp.nsec));
+            break :b rand.random().int(u32);
         };
 
         var pn = try Perlin.init(alloc, seed);
         defer pn.deinit(alloc);
 
-        var pool: std.Thread.Pool = undefined;
-        try pool.init(.{ .allocator = alloc });
-        defer pool.deinit();
-
-        var wg: std.Thread.WaitGroup = .{};
+        var group: std.Io.Group = .init;
         var mutex: std.Thread.Mutex = .{};
 
         for (0..self.size.y) |y|
-            pool.spawnWg(
-                &wg,
+            group.async(
+                io,
                 genTerrainDataLoop,
                 .{ self, &mutex, &settings, &pn, y },
             );
 
-        wg.wait();
+        try group.await(io);
     }
 
     fn genTerrainDataLoop(

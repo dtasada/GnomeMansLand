@@ -1,4 +1,14 @@
 const std = @import("std");
+const builtin = @import("builtin");
+
+comptime {
+    const minimum_zig_version = "0.16.0-dev.2255+d417441f4";
+    if (std.SemanticVersion.order(
+        builtin.zig_version,
+        std.SemanticVersion.parse(minimum_zig_version) catch unreachable,
+    ) == .lt)
+        @compileError("GnomeMansLand requires zig version " ++ minimum_zig_version);
+}
 
 const Module = struct {
     name: []const u8,
@@ -74,7 +84,6 @@ pub fn build(b: *std.Build) !void {
     // dependencies
     const raylib_mod = Module.init("raylib", raylib_dep.module("raylib"));
     const raygui_mod = Module.init("raygui", raylib_dep.module("raygui"));
-    const network_mod = Module.init("network", b.dependency("network", .{}).module("network"));
     const s2s_mod = Module.init("s2s", b.dependency("s2s", .{}).module("s2s"));
 
     // internal packages
@@ -85,8 +94,8 @@ pub fn build(b: *std.Build) !void {
     const state_mod = modules.create("state", "src/client/state/State.zig");
     const game_mod = modules.create("game", "src/client/game/Game.zig");
 
-    client_mod.addImports(&.{ commons_mod, game_mod, network_mod, s2s_mod, socket_packet_mod, server_mod });
-    server_mod.addImports(&.{ commons_mod, network_mod, s2s_mod, socket_packet_mod });
+    client_mod.addImports(&.{ commons_mod, game_mod, s2s_mod, socket_packet_mod, server_mod });
+    server_mod.addImports(&.{ commons_mod, s2s_mod, socket_packet_mod });
     state_mod.addImports(&.{ client_mod, commons_mod, game_mod, raylib_mod, server_mod, socket_packet_mod });
     game_mod.addImports(&.{ client_mod, commons_mod, raygui_mod, raylib_mod, server_mod, socket_packet_mod, state_mod });
     socket_packet_mod.addImports(&.{ commons_mod, server_mod });
@@ -111,7 +120,7 @@ pub fn build(b: *std.Build) !void {
 
     // check for lsp
     const exe_check = b.addExecutable(.{
-        .name = "dmr",
+        .name = "gnome_mans_land",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,

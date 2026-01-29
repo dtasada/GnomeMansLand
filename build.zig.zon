@@ -2,17 +2,9 @@
     .name = .gnome_mans_land,
     .version = "0.0.0",
     .fingerprint = 0x6b1dca5a45abafa0,
-    .minimum_zig_version = "0.15.2",
+    .minimum_zig_version = "0.16.0-dev.1593+c13857e50",
 
     .dependencies = .{
-        .raylib_zig = .{
-            .url = "git+https://github.com/dtasada/raylib-zig?ref=devel#ea7606c472372dc163c759a25996963b98190209",
-            .hash = "raylib_zig-5.6.0-dev-KE8REMBMBQDkYoQe4sGG76LNpErPTuMIrYccOSu_oJnj",
-        },
-        .network = .{
-            .url = "git+https://github.com/dtasada/zig-network#b73942a8e4f2bf1897c427a3d137ffbfcfe52ba4",
-            .hash = "network-0.1.0-Pm-AgmIxAQCn6LFeZw9PdUJTihmA7E0RPXxv8vI_T7LU",
-        },
         .s2s = .{
             .url = "https://github.com/dtasada/s2s/archive/ce32c87f4dfef6cc56978ad882c213318d475245.tar.gz",
             .hash = "s2s-0.0.1-qt8ajcR7AACXwc6H02JRmZ-ETekeyCNZUctz7FnZu1EQ",
@@ -21,7 +13,12 @@
             .url = "git+https://github.com/emscripten-core/emsdk?ref=4.0.9#3bcf1dcd01f040f370e10fe673a092d9ed79ebb5",
             .hash = "N-V-__8AAJl1DwBezhYo_VE6f53mPVm00R-Fk28NPW7P14EQ",
         },
+        .raylib_zig = .{
+            // .url = "git+https://github.com/dtasada/raylib-zig?ref=devel#2b48b1bf43eab934673ee063486629bb53dc268e",
+            // .hash = "raylib_zig-5.6.0-dev-KE8REGtNBQASUcktMSh_O-I2dokIACR5flTuqSQiUQ1a",
+            .path = "../raylib-zig",
         },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",

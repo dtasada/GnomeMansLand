@@ -72,7 +72,7 @@ pub inline fn sleep(io: std.Io, ms: i64) void {
         .awake,
     ) catch |err| switch (err) {
         error.UnsupportedClock, error.Unexpected => print(
-            "Could not successfully sleep thread: {}\n",
+            "Could not successfully sleep thread: {}",
             .{err},
             .red,
         ),
