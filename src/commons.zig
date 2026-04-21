@@ -67,15 +67,5 @@ pub const ServerSettings = struct {
 };
 
 pub inline fn sleep(io: std.Io, ms: i64) void {
-    io.sleep(
-        .fromMilliseconds(ms),
-        .awake,
-    ) catch |err| switch (err) {
-        error.UnsupportedClock, error.Unexpected => print(
-            "Could not successfully sleep thread: {}",
-            .{err},
-            .red,
-        ),
-        error.Canceled => {},
-    };
+    io.sleep(.fromMilliseconds(ms), .awake) catch {};
 }

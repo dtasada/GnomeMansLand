@@ -7,8 +7,11 @@ const commons = @import("commons");
 const Game = @import("game");
 
 pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const gpa = init.gpa;
+
     // Create game object
-    var game = Game.init(init.gpa, init.io) catch |err| switch (err) {
+    var game = Game.init(gpa, io) catch |err| switch (err) {
         error.UnexpectedToken => return commons.printErr(
             err,
             "Error parsing `settings.json`. Please check JSON syntax.",
@@ -23,8 +26,8 @@ pub fn main(init: std.process.Init) !void {
         ),
         else => return err,
     };
-    defer game.deinit(init.gpa);
+    defer game.deinit(gpa);
 
     // Main game loop here
-    try game.loop();
+    try game.loop(io);
 }

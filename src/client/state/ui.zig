@@ -289,15 +289,15 @@ pub const TextBox = struct {
     inner_text: TextVariable,
     max_len: usize,
     focused: bool,
-    last_backspaced: ?std.time.Instant,
+    last_backspaced: ?std.Io.Timestamp,
     backspace_fast: bool,
     anim_bar_len: f32,
 
     cursor_pos: usize, // position of caret in [0..len]
-    cursor_last_blink: std.time.Instant, // last time caret blink toggled
+    cursor_last_blink: std.Io.Timestamp, // last time caret blink toggled
     cursor_visible: bool, // current visible state of caret
 
-    pub fn init(alloc: std.mem.Allocator, settings: struct {
+    pub fn init(alloc: std.mem.Allocator, io: std.Io, settings: struct {
         x: f32,
         y: f32,
         default_body: []const u8 = "",
@@ -339,7 +339,7 @@ pub const TextBox = struct {
 
             // initialize new cursor fields
             .cursor_pos = settings.default_body.len,
-            .cursor_last_blink = try .now(),
+            .cursor_last_blink = std.Io.Clock.now(.awake, io),
             .cursor_visible = true,
         };
     }
@@ -352,7 +352,7 @@ pub const TextBox = struct {
         return self.inner_text.body.items;
     }
 
-    pub fn update(self: *TextBox) !void {
+    pub fn update(self: *TextBox, io: std.Io) !void {
         const min_length = 96.0;
         const base_bar_len = @max(min_length, self.inner_text.hitbox.width);
 
@@ -396,19 +396,21 @@ pub const TextBox = struct {
                 self.cursor_pos += 1;
                 // reset blink so caret is visible right after move
                 self.cursor_visible = true;
-                self.cursor_last_blink = try .now();
+                self.cursor_last_blink = std.Io.Clock.now(.awake, io);
             }
 
             if (rl.isKeyPressed(.left) and self.cursor_pos > 0) {
                 self.cursor_pos -= 1;
                 self.cursor_visible = true;
-                self.cursor_last_blink = try .now();
+                self.cursor_last_blink = std.Io.Clock.now(.awake, io);
             }
 
             if (rl.isKeyDown(.backspace) and self.getBody().len > 0) {
                 if (self.last_backspaced) |t| {
-                    const now = try std.time.Instant.now();
-                    if (now.since(t) > 500 * std.time.ns_per_ms or self.backspace_fast and now.since(t) > 50 * std.time.ns_per_ms) {
+                    const now = std.Io.Clock.now(.awake, io);
+                    if (now.durationTo(t).toMilliseconds() > 500 or
+                        self.backspace_fast and now.durationTo(t).toMilliseconds() > 50)
+                    {
                         self.last_backspaced = now;
                         // if cursor is at > 0, remove the char before cursor
                         if (self.cursor_pos > 0) {
@@ -418,7 +420,7 @@ pub const TextBox = struct {
                         }
                     }
                 } else {
-                    self.last_backspaced = try .now();
+                    self.last_backspaced = std.Io.Clock.now(.awake, io);
                     if (self.cursor_pos > 0) {
                         _ = self.inner_text.body.orderedRemove(self.cursor_pos - 1);
                         self.cursor_pos -= 1;
@@ -437,7 +439,7 @@ pub const TextBox = struct {
 
                     // reset blink so caret appears immediately
                     self.cursor_visible = true;
-                    self.cursor_last_blink = try .now();
+                    self.cursor_last_blink = std.Io.Clock.now(.awake, io);
                 }
             }
         } else {
@@ -450,8 +452,8 @@ pub const TextBox = struct {
         self.inner_text.update();
 
         // caret blinking and drawing
-        const now = try std.time.Instant.now();
-        if (now.since(self.cursor_last_blink) > 500 * std.time.ns_per_ms) {
+        const now = std.Io.Clock.now(.awake, io);
+        if (now.durationTo(self.cursor_last_blink).toMilliseconds() > 500) {
             self.cursor_visible = !self.cursor_visible;
             self.cursor_last_blink = now;
         }
@@ -495,6 +497,7 @@ pub const TextBoxSet = struct {
 
     pub fn initGeneric(
         alloc: std.mem.Allocator,
+        io: std.Io,
         settings: struct {
             top_left_x: f32,
             top_left_y: f32,
@@ -533,7 +536,7 @@ pub const TextBoxSet = struct {
         }
 
         for (self.labels, 0..) |label, i| {
-            self.boxes[i] = try TextBox.init(alloc, .{
+            self.boxes[i] = try TextBox.init(alloc, io, .{
                 .x = label.x + longest_label_x + 16.0,
                 .y = label.y,
                 .font = settings.font,
@@ -554,7 +557,7 @@ pub const TextBoxSet = struct {
     }
 
     /// Pass in references to strings. Writes sentinel at the end.
-    pub fn update(self: *TextBoxSet, references: []const []u8) !void {
+    pub fn update(self: *TextBoxSet, io: std.Io, references: []const []u8) !void {
         if (references.len != self.boxes.len) {
             commons.print(
                 "Amount of references passed to TextBoxSet.update must equal amount of labels passed in TextBoxSet.init",
@@ -567,7 +570,7 @@ pub const TextBoxSet = struct {
         for (self.labels) |*label| label.update();
 
         for (references, 0..) |ref, i| {
-            try self.boxes[i].update();
+            try self.boxes[i].update(io);
             const body = self.boxes[i].getBody();
             if (body.len > 0 and ref.len > body.len) {
                 @memcpy(ref[0..body.len], body);

@@ -84,7 +84,7 @@ pub const Map = struct {
     fn genTerrainData(self: *Map, alloc: std.mem.Allocator, io: std.Io, settings: ServerSettings) !void {
         const seed: u32 = settings.world_generation.seed orelse b: {
             var rand = std.Random.DefaultPrng
-                .init(@intCast((try std.time.Instant.now()).timestamp.nsec));
+                .init(@intCast(std.Io.Clock.now(.awake, io).toNanoseconds()));
             break :b rand.random().int(u32);
         };
 
@@ -92,25 +92,22 @@ pub const Map = struct {
         defer pn.deinit(alloc);
 
         var group: std.Io.Group = .init;
-        var mutex: std.Thread.Mutex = .{};
+        var mutex: std.Io.Mutex = .init;
 
         for (0..self.size.y) |y|
-            group.async(
-                io,
-                genTerrainDataLoop,
-                .{ self, &mutex, &settings, &pn, y },
-            );
+            group.async(io, genTerrainDataLoop, .{ self, io, &mutex, &settings, &pn, y });
 
         try group.await(io);
     }
 
     fn genTerrainDataLoop(
         self: *Map,
-        mutex: *std.Thread.Mutex,
+        io: std.Io,
+        mutex: *std.Io.Mutex,
         settings: *const ServerSettings,
         pn: *const Perlin,
         y: usize,
-    ) void {
+    ) !void {
         for (0..self.size.x) |x| {
             var freq = 0.0001 * settings.world_generation.frequency;
             var height: f32 = 0.0;
@@ -131,8 +128,8 @@ pub const Map = struct {
             }
 
             {
-                mutex.lock();
-                defer mutex.unlock();
+                try mutex.lock(io);
+                defer mutex.unlock(io);
                 self.height_map[y * self.size.x + x] = height;
                 _ = self.floats_written.fetchAdd(1, .monotonic);
             }

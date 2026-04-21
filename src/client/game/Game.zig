@@ -49,7 +49,7 @@ pub fn init(alloc: std.mem.Allocator, io: std.Io) !*Self {
         .alloc = alloc,
         .io = io,
         .settings = settings,
-        .state = try .init(alloc, settings),
+        .state = try .init(alloc, io, settings),
     };
 
     return self;
@@ -73,45 +73,35 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
         self.alloc,
         self.settings,
         .{ .whitespace = .indent_4 },
-    ) catch |err| {
-        commons.print(
-            "Couldn't stringify settings for saving: {}",
-            .{err},
-            .red,
-        );
-        return;
-    };
+    ) catch |err| return commons.print(
+        "Couldn't stringify settings for saving: {}",
+        .{err},
+        .red,
+    );
     defer self.alloc.free(settings_string);
 
-    const settings_file = std.Io.Dir.cwd().createFile(self.io, "./settings.json", .{}) catch |err| {
-        commons.print(
+    const settings_file = std.Io.Dir.cwd().createFile(self.io, "./settings.json", .{}) catch |err|
+        return commons.print(
             "Couldn't create settings file './settings.json': {}",
             .{err},
             .red,
         );
-        return;
-    };
 
     var settings_buf: [1024]u8 = undefined;
     var file_writer = settings_file.writer(self.io, &settings_buf);
     const interface = &file_writer.interface;
-    interface.writeAll(settings_string) catch |err| {
-        commons.print(
+    interface.writeAll(settings_string) catch |err|
+        return commons.print(
             "Couldn't write to settings file './settings.json': {}",
             .{err},
             .red,
         );
-        return;
-    };
 
-    interface.flush() catch |err| {
-        commons.print(
-            "Couldn't flush settings file './settings.json': {}",
-            .{err},
-            .red,
-        );
-        return;
-    };
+    interface.flush() catch |err| return commons.print(
+        "Couldn't flush settings file './settings.json': {}",
+        .{err},
+        .red,
+    );
 }
 
 /// Set up Raylib window and corresponding settings
@@ -161,9 +151,9 @@ pub const Context = struct {
 };
 
 /// main game loop
-pub fn loop(self: *Self) !void {
+pub fn loop(self: *Self, io: std.Io) !void {
     while (!rl.windowShouldClose())
-        try self.state.update(self);
+        try self.state.update(io, self);
 }
 
 /// Initializes server. Deinits first if server already existed.

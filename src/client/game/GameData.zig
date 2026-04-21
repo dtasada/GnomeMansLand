@@ -14,7 +14,7 @@ pub const Map = @import("Map.zig");
 const Self = @This();
 
 map: Map,
-players: std.ArrayList(Player) = .{},
+players: std.ArrayList(Player) = .empty,
 
 /// Initializes game data. `host_is_local` determines whether the Map will be fetched in the future,
 /// or if it should be memcopied from the host server.

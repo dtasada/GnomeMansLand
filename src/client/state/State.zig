@@ -39,13 +39,13 @@ threaded: std.Io.Threaded,
 wait_for_server: ?std.Io.Future(void),
 
 /// Initializes all states and defaults to Lobby.
-pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
+pub fn init(alloc: std.mem.Allocator, io: std.Io, settings: Client.Settings) !Self {
     return .{
         .type = .lobby,
-        .lobby = try Lobby.init(alloc, .{}),
+        .lobby = try Lobby.init(alloc, io, .{}),
         .lobby_settings = try LobbySettings.init(alloc),
-        .server_setup = try ServerSetup.init(alloc, settings),
-        .client_setup = try ClientSetup.init(alloc, settings),
+        .server_setup = try ServerSetup.init(alloc, io, settings),
+        .client_setup = try ClientSetup.init(alloc, io, settings),
         .in_game = try InGame.init(alloc),
         .alloc = alloc,
         .threaded = .init(alloc, .{ .environ = .empty }),
@@ -67,10 +67,10 @@ pub fn deinit(self: *Self) void {
 }
 
 /// Updates the current active state.
-pub fn update(self: *Self, game: *Game) !void {
+pub fn update(self: *Self, io: std.Io, game: *Game) !void {
     switch (self.type) {
-        .lobby => try self.lobby.update(game),
-        .lobby_settings => try self.lobby_settings.update(self),
+        .lobby => try self.lobby.update(io, game),
+        .lobby_settings => try self.lobby_settings.update(io, self),
         .client_setup => try self.client_setup.update(game),
         .server_setup => try self.server_setup.update(game),
         .game => try self.in_game.update(game),
@@ -81,8 +81,8 @@ pub fn openSettings(self: *Self) void {
     self.type = .lobby_settings;
 }
 
-pub fn openLobby(self: *Self) void {
-    self.lobby.reinit(self.alloc) catch |err| {
+pub fn openLobby(self: *Self, io: std.Io) void {
+    self.lobby.reinit(self.alloc, io) catch |err| {
         commons.print("Could not reinitalize lobby: {}", .{err}, .red);
         return;
     };

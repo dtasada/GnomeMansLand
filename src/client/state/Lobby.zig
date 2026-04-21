@@ -19,6 +19,7 @@ nickname_error_text: ?ui.Text = null,
 
 pub fn init(
     alloc: std.mem.Allocator,
+    io: std.Io,
     settings: struct {
         nickname_input_body: []const u8 = "",
     },
@@ -27,7 +28,7 @@ pub fn init(
     const height: f32 = @floatFromInt(rl.getScreenHeight());
 
     return .{
-        .nickname_input = try ui.TextBox.init(alloc, .{
+        .nickname_input = try ui.TextBox.init(alloc, io, .{
             .x = width / 2.0 - 160.0,
             .y = height - 240.0,
             .default_body = settings.nickname_input_body,
@@ -58,17 +59,17 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
 }
 
 /// Deinits and reinitializes Lobby. used when resizing window.
-pub fn reinit(self: *Self, alloc: std.mem.Allocator) !void {
+pub fn reinit(self: *Self, alloc: std.mem.Allocator, io: std.Io) !void {
     const nickname_save = try alloc.dupe(u8, self.nickname_input.getBody());
     defer alloc.free(nickname_save);
 
     self.deinit(alloc);
-    self.* = try init(alloc, .{ .nickname_input_body = nickname_save });
+    self.* = try init(alloc, io, .{ .nickname_input_body = nickname_save });
 }
 
-pub fn update(self: *Self, game: *Game) !void {
+pub fn update(self: *Self, io: std.Io, game: *Game) !void {
     if (rl.isWindowResized())
-        try self.reinit(game.alloc);
+        try self.reinit(game.alloc, io);
 
     rl.clearBackground(.black);
 
@@ -80,7 +81,7 @@ pub fn update(self: *Self, game: *Game) !void {
 
     self.title_text.update();
 
-    try self.nickname_input.update();
+    try self.nickname_input.update(io);
 
     if (self.nickname_error_text) |*t| t.update();
 

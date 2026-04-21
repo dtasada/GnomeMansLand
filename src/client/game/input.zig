@@ -97,7 +97,7 @@ fn getMouseToWorld(in_game: *const InGame, game: *Game) ?rl.Vector3 {
                 if (model) |m| {
                     const mouse_pos_ray = rl.getScreenToWorldRay(rl.getMousePosition(), camera);
                     const mouse_world_collision = rl.getRayCollisionMesh(mouse_pos_ray, m.meshes[0], m.transform);
-                    if (mouse_world_collision.point.equals(.zero()) != 0)
+                    if (!mouse_world_collision.point.equals(.zero()))
                         // if collision returns v3(0), skip this model
                         continue
                     else

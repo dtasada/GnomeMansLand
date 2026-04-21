@@ -14,8 +14,7 @@ const Self = @This();
 
 const BYTE_LIMIT: usize = 65535;
 
-gpa: std.heap.DebugAllocator(.{}),
-tsa: std.heap.ThreadSafeAllocator,
+gpa: std.heap.DebugAllocator(.{ .thread_safe = true }),
 alloc: std.mem.Allocator,
 
 /// Contains internal configuration.
@@ -206,9 +205,7 @@ pub fn init(alloc: std.mem.Allocator, settings: ServerSettings) !*Self {
 
     self.gpa = .init;
     errdefer _ = self.gpa.deinit();
-
-    self.tsa = .{ .child_allocator = self.gpa.allocator() };
-    self.alloc = self.tsa.allocator();
+    self.alloc = self.gpa.allocator();
 
     self.threaded = .init(self.alloc, .{ .environ = .empty });
     self.io = self.threaded.io();

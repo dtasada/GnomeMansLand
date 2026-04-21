@@ -25,12 +25,12 @@ pub fn deinit(self: *const Self, alloc: std.mem.Allocator) void {
     defer self.buttons.deinit(alloc);
 }
 
-pub fn update(self: *const Self, state: *State) !void {
+pub fn update(self: *const Self, io: std.Io, state: *State) !void {
     rl.beginDrawing();
     rl.clearBackground(.black);
 
     try self.buttons.update(.{
-        .{ State.openLobby, .{state} },
+        .{ State.openLobby, .{ state, io } },
     });
 
     rl.endDrawing();

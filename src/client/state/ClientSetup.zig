@@ -17,7 +17,7 @@ server_port_string_buf: [6]u8 = undefined,
 connect_error_text: ?ui.Text = null,
 server_port_error_text: ?ui.Text = null,
 
-pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
+pub fn init(alloc: std.mem.Allocator, io: std.Io, settings: Client.Settings) !Self {
     var self: Self = .{
         .text_box_set = undefined,
         .button_set = undefined,
@@ -25,6 +25,7 @@ pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
 
     self.text_box_set = try ui.TextBoxSet.initGeneric(
         alloc,
+        io,
         .{ .top_left_x = 24, .top_left_y = 128 },
         &.{
             .{
@@ -63,14 +64,14 @@ pub fn update(self: *Self, game: *Game) !void {
     rl.beginDrawing();
     rl.clearBackground(.black);
 
-    try self.text_box_set.update(&.{
+    try self.text_box_set.update(game.io, &.{
         game.settings.multiplayer.server_host,
         &self.server_port_string_buf,
     });
 
     self.button_set.update(.{
         .{ State.openGame, .{ &game.state, game } },
-        .{ State.openLobby, .{&game.state} },
+        .{ State.openLobby, .{ &game.state, game.io } },
     }) catch |err| switch (err) {
         error.CouldNotConnect => {
             self.connect_error_text = try ui.Text.init(.{

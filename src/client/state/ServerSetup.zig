@@ -15,7 +15,7 @@ button_set: ui.ButtonSet,
 port_string_buf: [6]u8,
 max_players_string_buf: [2]u8,
 
-pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
+pub fn init(alloc: std.mem.Allocator, io: std.Io, settings: Client.Settings) !Self {
     var self: Self = undefined;
 
     @memset(&self.port_string_buf, 0);
@@ -26,6 +26,7 @@ pub fn init(alloc: std.mem.Allocator, settings: Client.Settings) !Self {
 
     self.text_box_set = try ui.TextBoxSet.initGeneric(
         alloc,
+        io,
         .{ .top_left_x = 24, .top_left_y = 128 },
         &.{
             .{ .label = "Server port: ", .max_len = 5, .default_value = server_port },
@@ -97,13 +98,13 @@ pub fn update(self: *Self, game: *Game) !void {
     rl.beginDrawing();
     rl.clearBackground(.black);
 
-    try self.text_box_set.update(&.{
+    try self.text_box_set.update(game.io, &.{
         &self.port_string_buf,
         &self.max_players_string_buf,
     });
     try self.button_set.update(.{
         .{ State.hostServer, .{ &game.state, game } },
-        .{ State.openLobby, .{&game.state} },
+        .{ State.openLobby, .{ &game.state, game.io } },
     });
 
     // bro do not touch this code this is so fragile bro. null termination sucks

@@ -16,7 +16,7 @@ camera_mode: enum { first_person, isometric } = .isometric,
 camera_sens: f32 = 0.1,
 mouse_is_enabled: bool = true,
 
-lights: std.ArrayList(Game.Light) = .{},
+lights: std.ArrayList(Game.Light) = .empty,
 light_shader: rl.Shader,
 
 pub fn init(alloc: std.mem.Allocator) !Self {
