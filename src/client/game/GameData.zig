@@ -6,7 +6,6 @@ const commons = @import("commons");
 const socket_packet = @import("socket_packet");
 
 const Settings = @import("client").Settings;
-
 const Player = @import("server").GameData.Player;
 
 pub const Map = @import("Map.zig");
@@ -14,7 +13,7 @@ pub const Map = @import("Map.zig");
 const Self = @This();
 
 map: Map,
-players: std.ArrayList(Player) = .empty,
+players: std.ArrayList(Player),
 
 /// Initializes game data. `host_is_local` determines whether the Map will be fetched in the future,
 /// or if it should be memcopied from the host server.
@@ -30,6 +29,7 @@ pub fn init(
             .no => |map_size| try Map.init(alloc, map_size),
             .yes => |server_map| try Map.initFromExisting(alloc, server_map),
         },
+        .players = .empty,
     };
 }
 

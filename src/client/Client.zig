@@ -59,8 +59,10 @@ pub fn init(
     errdefer self.running.store(false, .monotonic);
 
     self.polling_rate = settings.multiplayer.polling_rate;
-
+    self.game_data = try GameData.init(self.alloc, .{ .no = .init(0, 0) });
     self.listen_handler = self.io.async(listen, .{self});
+    var dummy = self.game_data;
+    defer dummy.deinit(alloc);
     self.game_data = try GameData.init(
         self.alloc,
         if (server_map) |s| b: {
@@ -75,7 +77,6 @@ pub fn init(
             break :b .{ .no = accept.map_size };
         },
     );
-
     if (server_map == null) try self.send(.client_requests_map_data);
 
     return self;
@@ -109,7 +110,7 @@ fn sendAndReceive(self: *Self, message: socket_packet.Packet, comptime T: type, 
 
 /// Meant to run as a thread. Listens for new messages and calls `handleMessage` upon receiving one.
 fn listen(self: *Self) anyerror!void {
-    var pending_data = try std.ArrayList(u8).initCapacity(self.alloc, BYTE_LIMIT);
+    var pending_data: std.ArrayList(u8) = try .initCapacity(self.alloc, BYTE_LIMIT);
     defer pending_data.deinit(self.alloc);
 
     var read_buffer: [4096]u8 = undefined;
