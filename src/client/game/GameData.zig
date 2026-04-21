@@ -35,5 +35,6 @@ pub fn init(
 
 pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
     self.map.deinit(alloc);
+    for (self.players.items) |p| p.deinit(alloc);
     self.players.deinit(alloc);
 }

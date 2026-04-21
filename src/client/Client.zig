@@ -61,22 +61,21 @@ pub fn init(
     self.polling_rate = settings.multiplayer.polling_rate;
     self.game_data = try GameData.init(self.alloc, .{ .no = .init(0, 0) });
     self.listen_handler = self.io.async(listen, .{self});
-    var dummy = self.game_data;
-    defer dummy.deinit(alloc);
-    self.game_data = try GameData.init(
-        self.alloc,
-        if (server_map) |s| b: {
-            try self.send(.{ .client_requests_connect = connect_message });
-            break :b .{ .yes = s };
-        } else b: {
-            const accept = try self.sendAndReceive(
-                .{ .client_requests_connect = connect_message },
-                socket_packet.ServerAcceptedClient,
-                &self.wait_list.client_accepted,
-            );
-            break :b .{ .no = accept.map_size };
-        },
-    );
+
+    if (server_map) |s| {
+        try self.send(.{ .client_requests_connect = connect_message });
+        self.game_data.map.deinit(self.alloc);
+        self.game_data.map = try GameData.Map.initFromExisting(self.alloc, s);
+    } else {
+        const accept = try self.sendAndReceive(
+            .{ .client_requests_connect = connect_message },
+            socket_packet.ServerAcceptedClient,
+            &self.wait_list.client_accepted,
+        );
+        self.game_data.map.deinit(self.alloc);
+        self.game_data.map = try GameData.Map.init(self.alloc, accept.map_size);
+    }
+
     if (server_map == null) try self.send(.client_requests_map_data);
 
     return self;
@@ -92,10 +91,18 @@ pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
             .yellow,
         );
 
+    self.listen_handler.await(self.io) catch |err| {
+        if (err != error.Canceled) {
+            commons.print(
+                "Client: Error waiting for listen handler: {}",
+                .{err},
+                .yellow,
+            );
+        }
+    };
+
     self.stream.close(self.io);
-
     self.game_data.deinit(self.alloc);
-
     self.threaded.deinit();
 
     alloc.destroy(self);
@@ -165,11 +172,14 @@ fn handleMessage(self: *Self, message_payload: []const u8) !void {
 
     switch (packet) {
         .player_state => |player_state| {
-            const player = player_state.player;
+            var player = player_state.player;
+            player.nickname = try self.alloc.dupe(u8, player.nickname);
             if (self.game_data.players.items.len <= @as(usize, player.id)) {
                 try self.game_data.players.append(self.alloc, player);
             } else {
-                self.game_data.players.items[@intCast(player.id)] = player;
+                const existing = &self.game_data.players.items[@intCast(player.id)];
+                existing.deinit(self.alloc);
+                existing.* = player;
             }
         },
         .map_chunk => |map_chunk| {
